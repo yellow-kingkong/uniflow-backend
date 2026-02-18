@@ -1,0 +1,348 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{{ user.name }}님의 비즈니스 순환 진단 리포트 | UNIFLOW</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+      @import url("https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&display=swap");
+
+      body {
+        font-family: "Noto Sans KR", sans-serif;
+        background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+      }
+
+      .page {
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        padding: 4rem 2rem;
+      }
+
+      .gradient-text {
+        background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+      }
+
+      .card {
+        background: rgba(255, 255, 255, 0.05);
+        backdrop-filter: blur(10px);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 1.5rem;
+        padding: 2rem;
+      }
+
+      .bottleneck-bar {
+        height: 8px;
+        background: linear-gradient(90deg, #ef4444 0%, #f59e0b 100%);
+        border-radius: 4px;
+        transition: width 0.5s ease;
+      }
+    </style>
+  </head>
+  <body class="text-white">
+    <!-- 커버 페이지 -->
+    <div
+      class="page bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900"
+    >
+      <div class="text-center max-w-4xl">
+        <h1 class="text-6xl font-black mb-8 leading-tight">
+          대표님의 비즈니스는<br />
+          이미 <span class="gradient-text">거인</span>입니다.
+        </h1>
+        <p class="text-3xl mb-12 text-gray-300">
+          단지, 혈관이 막혀있을 뿐입니다.
+        </p>
+        <div class="border-t border-gray-600 pt-8 mt-8">
+          <p class="text-2xl font-bold mb-2">
+            {{ user.name }}님의 비즈니스 순환 진단 리포트
+          </p>
+          <p class="text-lg text-gray-400">UNIFLOW | 2025</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Page 1: 공감 - 당신은 이미 거인 -->
+    <div class="page">
+      <div class="max-w-4xl card">
+        <h2 class="text-4xl font-bold mb-8 gradient-text">
+          대표님, 여기까지 오신 것만으로도 대단합니다.
+        </h2>
+
+        <div class="space-y-6 text-xl">
+          <div class="flex items-center space-x-4">
+            <span class="text-3xl">✓</span>
+            <span>{{ user.industry }}에서 {{ user.years_in_business }}년</span>
+          </div>
+          <div class="flex items-center space-x-4">
+            <span class="text-3xl">✓</span>
+            <span>{{ user.revenue_range }} 달성</span>
+          </div>
+          <div class="flex items-center space-x-4">
+            <span class="text-3xl">✓</span>
+            <span>{{ user.team_size }}명 운영 중</span>
+          </div>
+        </div>
+
+        <div class="mt-12 p-6 bg-blue-500/20 rounded-xl">
+          <p class="text-2xl font-bold">{{ narrative.page1_recognition }}</p>
+        </div>
+
+        <div class="mt-8 text-center">
+          <p class="text-3xl font-bold text-red-400">하지만...</p>
+          <p class="text-xl mt-4 text-gray-300">
+            거인의 혈관 어딘가가 막혀있습니다.<br />그래서 힘을 제대로 못 쓰고
+            계십니다.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Page 2: 진단 - 막힌 혈관 발견 -->
+    <div class="page">
+      <div class="max-w-5xl w-full">
+        <h2 class="text-5xl font-black mb-12 text-center gradient-text">
+          우리가 찾은 막힌 혈관 3곳
+        </h2>
+
+        <div class="space-y-6">
+          {% for bottleneck in bottlenecks.bottlenecks[:3] %}
+          <div class="card">
+            <div class="flex items-start space-x-4">
+              <span class="text-4xl">
+                {% if loop.index == 1 %}🔴{% elif loop.index == 2 %}🟡{% else
+                %}🟠{% endif %}
+              </span>
+              <div class="flex-1">
+                <h3 class="text-2xl font-bold mb-3">
+                  혈관 #{{ loop.index }}: {{ bottleneck.issue }}
+                </h3>
+
+                <div class="space-y-2 text-lg">
+                  <div>
+                    <p class="text-gray-400 mb-1">막힌 정도</p>
+                    <div class="w-full bg-gray-700 rounded-full h-3">
+                      <div
+                        class="bottleneck-bar"
+                        style="width: {{ bottleneck.urgency * 10 }}%"
+                      ></div>
+                    </div>
+                    <p class="text-right text-sm mt-1">
+                      {{ bottleneck.urgency * 10 }}%
+                    </p>
+                  </div>
+
+                  <p>
+                    ├─ 매월 손실:
+                    <span class="font-bold text-red-400"
+                      >{{ bottleneck.impact_hours }}시간 ({{
+                      "{:,}".format(bottleneck.impact_cost) }}원)</span
+                    >
+                  </p>
+                  <p>└─ 영향 범위: {{ bottleneck.description }}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+
+        <div
+          class="mt-12 p-8 bg-red-500/20 border-2 border-red-500 rounded-xl text-center"
+        >
+          <p class="text-3xl font-black mb-4">💰 총 월간 손실</p>
+          <p class="text-5xl font-black text-red-400">
+            {{ bottlenecks.total_monthly_loss.time }}시간 + {{
+            "{:,}".format(bottlenecks.total_monthly_loss.cost) }}원
+          </p>
+          <p class="text-2xl mt-4">
+            📅 이 상태로 1년 =
+            <span class="text-yellow-400 font-bold"
+              >{{ "{:,}".format(bottlenecks.total_monthly_loss.cost * 12) }}원
+              증발</span
+            >
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Page 3: 충격 - 새고 있는 가치 시각화 -->
+    <div class="page">
+      <div class="max-w-4xl text-center">
+        <h2 class="text-5xl font-black mb-12 gradient-text">
+          이 리포트를 읽는 지금 이 순간에도
+        </h2>
+
+        <div class="space-y-8 text-3xl">
+          <div class="card">
+            <p class="mb-2">⏱️ 17분마다</p>
+            <p class="text-5xl font-black text-red-400">→ 10만원 증발</p>
+          </div>
+
+          <div class="card">
+            <p class="mb-2">📊 하루 동안</p>
+            <p class="text-5xl font-black text-orange-400">
+              → {{ "{:,}".format(bottlenecks.total_monthly_loss.cost // 30) }}원
+              손실
+            </p>
+          </div>
+
+          <div class="card">
+            <p class="mb-2">📆 한 달이면</p>
+            <p class="text-5xl font-black text-yellow-400">
+              → {{ "{:,}".format(bottlenecks.total_monthly_loss.cost) }}원 손실
+            </p>
+          </div>
+        </div>
+
+        <div class="mt-12 p-8 bg-red-900/30 rounded-xl">
+          <p class="text-2xl">{{ narrative.page3_shock }}</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Page 4: 벤치마크 -->
+    <div class="page">
+      <div class="max-w-5xl w-full">
+        <h2 class="text-5xl font-black mb-12 text-center gradient-text">
+          같은 업종 상위 10% 기업과 비교
+        </h2>
+
+        <div class="card">
+          <div class="grid grid-cols-3 gap-8 text-center">
+            <div></div>
+            <div class="font-bold text-xl">대표님</div>
+            <div class="font-bold text-xl text-blue-400">상위 10%</div>
+
+            <div class="text-left font-bold">업무 자동화율</div>
+            <div class="text-3xl">{{ benchmark.current.automation_rate }}%</div>
+            <div class="text-3xl text-blue-400">
+              {{ benchmark.top_10_percent.automation_rate }}%
+            </div>
+
+            <div class="text-left font-bold">데이터 통합도</div>
+            <div class="text-3xl">
+              {{ benchmark.current.data_integration }}%
+            </div>
+            <div class="text-3xl text-blue-400">
+              {{ benchmark.top_10_percent.data_integration }}%
+            </div>
+
+            <div class="text-left font-bold">의사결정 속도</div>
+            <div class="text-3xl">
+              {{ benchmark.current.decision_speed_days }}일
+            </div>
+            <div class="text-3xl text-blue-400">
+              {{ benchmark.top_10_percent.decision_speed_days }}일
+            </div>
+          </div>
+        </div>
+
+        <div class="mt-12 text-center text-2xl space-y-4">
+          <p class="font-bold">이 격차는 "실력"이 아닙니다.</p>
+          <p>
+            단지
+            <span class="text-blue-400 font-bold">"혈관의 상태"</span> 차이일
+            뿐입니다.
+          </p>
+          <p class="text-xl text-gray-400 mt-8">
+            그들도 한때는 막혀있었습니다. 지금은 뚫렸을 뿐이죠.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Page 9: 제안 - 함께 뚫겠습니다 -->
+    <div class="page">
+      <div class="max-w-4xl w-full">
+        <h2 class="text-5xl font-black mb-12 text-center gradient-text">
+          UNIFLOW 혈관 개통 프로그램
+        </h2>
+
+        <div class="card mb-8">
+          <h3 class="text-2xl font-bold mb-6">대표님만의 맞춤 솔루션 설계</h3>
+          <div class="space-y-3 text-lg">
+            <p>├─ 1:1 심층 진단 (90분)</p>
+            <p>├─ 맞춤 자동화 설계</p>
+            <p>├─ 3개월 집중 개통</p>
+            <p>└─ 6개월 사후관리</p>
+          </div>
+        </div>
+
+        <div
+          class="bg-gradient-to-r from-purple-600 to-blue-600 p-8 rounded-xl text-center"
+        >
+          <p class="text-3xl font-black mb-6">🎁 이 리포트를 받으신 분께만</p>
+
+          <div class="space-y-3 text-xl mb-8">
+            <p>✓ 무료 전략 세션 (60분, 50만원 상당)</p>
+            <p>✓ 혈관 개통 우선순위 가이드</p>
+            <p>✓ 첫 달 세팅비 30% 할인</p>
+          </div>
+
+          <p class="text-2xl font-bold text-yellow-300 mb-8">
+            단, {{ cta.discount_deadline_hours }}시간 내 예약자에 한함
+          </p>
+
+          <a
+            href="#"
+            class="inline-block bg-white text-purple-600 px-12 py-4 rounded-full text-2xl font-black hover:scale-105 transition-transform"
+          >
+            🔥 지금 혈관 뚫기 시작 🔥
+          </a>
+
+          <p class="text-sm mt-6 text-gray-200">
+            *상담만 받아도 손해 없습니다 | *무리한 영업 절대 하지 않습니다
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Page 10: 마무리 -->
+    <div class="page">
+      <div class="max-w-4xl text-center">
+        <h2 class="text-5xl font-black mb-12">대표님,</h2>
+
+        <div class="space-y-8 text-2xl leading-relaxed">
+          <p>
+            거인이 쓰러진 적은 없습니다.<br />단지 잠시 무릎을 꿇었을 뿐입니다.
+          </p>
+
+          <p class="text-3xl font-bold gradient-text">
+            혈관만 뚫으면,<br />거인은 다시 일어서고,<br />더 멀리 걸을 수
+            있습니다.
+          </p>
+
+          <div class="border-t border-b border-gray-600 py-8 my-12">
+            <p class="font-bold">
+              UNIFLOW는<br />대표님의 혈관을 뚫는 파트너입니다.
+            </p>
+            <p class="text-xl mt-4 text-gray-400">
+              막힌 곳을 찾고, 정확히 뚫고, 다시는 안 막히게 관리합니다.
+            </p>
+          </div>
+
+          <p class="text-4xl font-black">거인이 다시 일어설 준비가 되셨나요?</p>
+
+          <a
+            href="#"
+            class="inline-block mt-8 bg-gradient-to-r from-blue-600 to-purple-600 px-12 py-4 rounded-full text-2xl font-black hover:scale-105 transition-transform"
+          >
+            예약하기
+          </a>
+        </div>
+
+        <div class="mt-16 text-gray-400">
+          <p>문의: hello@uniflow.ai.kr</p>
+          <p>www.uniflow.ai.kr</p>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>

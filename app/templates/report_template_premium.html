@@ -1,0 +1,634 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{{ user.name }}님의 비즈니스 순환 진단 리포트 | UNIFLOW</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Pretendard:wght@400;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family: "Pretendard", -apple-system, BlinkMacSystemFont, "Segoe UI",
+          sans-serif;
+        background: #ffffff;
+        color: #1a1a2e;
+        line-height: 1.6;
+      }
+
+      .page {
+        min-height: 100vh;
+        padding: 80px 40px;
+        max-width: 1200px;
+        margin: 0 auto;
+      }
+
+      /* 타이포그래피 */
+      h1 {
+        font-size: 48px;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        margin-bottom: 24px;
+        color: #1a1a2e;
+      }
+
+      h2 {
+        font-size: 36px;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        margin-bottom: 32px;
+        color: #1a1a2e;
+      }
+
+      h3 {
+        font-size: 24px;
+        font-weight: 600;
+        margin-bottom: 16px;
+        color: #2d3748;
+      }
+
+      p {
+        font-size: 16px;
+        color: #4a5568;
+        margin-bottom: 16px;
+      }
+
+      /* 색상 시스템 */
+      .text-primary {
+        color: #0066cc;
+      }
+
+      .text-secondary {
+        color: #2d3748;
+      }
+
+      .bg-subtle {
+        background: #f7fafc;
+      }
+
+      .border-light {
+        border: 1px solid #e2e8f0;
+      }
+
+      /* 카드 */
+      .card {
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        padding: 32px;
+        margin-bottom: 24px;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+      }
+
+      .card-subtle {
+        background: #f7fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        padding: 24px;
+        margin-bottom: 16px;
+      }
+
+      /* 헤더 */
+      .report-header {
+        border-bottom: 2px solid #e2e8f0;
+        padding-bottom: 40px;
+        margin-bottom: 60px;
+      }
+
+      .logo {
+        font-size: 24px;
+        font-weight: 700;
+        color: #0066cc;
+        margin-bottom: 40px;
+      }
+
+      .report-title {
+        font-size: 14px;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        color: #718096;
+        margin-bottom: 8px;
+      }
+
+      .report-meta {
+        display: flex;
+        gap: 24px;
+        margin-top: 16px;
+        font-size: 14px;
+        color: #718096;
+      }
+
+      /* 통계 카드 */
+      .stat-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 24px;
+        margin: 40px 0;
+      }
+
+      .stat-card {
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        padding: 24px;
+        text-align: center;
+      }
+
+      .stat-label {
+        font-size: 14px;
+        color: #718096;
+        margin-bottom: 8px;
+      }
+
+      .stat-value {
+        font-size: 32px;
+        font-weight: 700;
+        color: #1a1a2e;
+      }
+
+      .stat-unit {
+        font-size: 16px;
+        color: #718096;
+        margin-left: 4px;
+      }
+
+      /* 병목 포인트 */
+      .bottleneck-item {
+        background: #ffffff;
+        border-left: 4px solid #0066cc;
+        padding: 24px;
+        margin-bottom: 16px;
+        border-radius: 4px;
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+      }
+
+      .bottleneck-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 16px;
+      }
+
+      .bottleneck-title {
+        font-size: 20px;
+        font-weight: 600;
+        color: #1a1a2e;
+      }
+
+      .urgency-badge {
+        background: #fff5f5;
+        color: #c53030;
+        padding: 4px 12px;
+        border-radius: 4px;
+        font-size: 14px;
+        font-weight: 600;
+      }
+
+      .bottleneck-detail {
+        font-size: 14px;
+        color: #4a5568;
+        line-height: 1.8;
+      }
+
+      .bottleneck-metric {
+        display: flex;
+        gap: 32px;
+        margin-top: 16px;
+        padding-top: 16px;
+        border-top: 1px solid #e2e8f0;
+      }
+
+      .metric-item {
+        font-size: 14px;
+        color: #718096;
+      }
+
+      .metric-value {
+        font-weight: 600;
+        color: #1a1a2e;
+      }
+
+      /* 벤치마크 테이블 */
+      .benchmark-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 32px 0;
+      }
+
+      .benchmark-table th {
+        background: #f7fafc;
+        padding: 16px;
+        text-align: left;
+        font-weight: 600;
+        color: #2d3748;
+        border-bottom: 2px solid #e2e8f0;
+      }
+
+      .benchmark-table td {
+        padding: 16px;
+        border-bottom: 1px solid #e2e8f0;
+      }
+
+      .benchmark-value {
+        font-size: 20px;
+        font-weight: 600;
+      }
+
+      .benchmark-current {
+        color: #1a1a2e;
+      }
+
+      .benchmark-target {
+        color: #0066cc;
+      }
+
+      /* CTA 섹션 */
+      .cta-section {
+        background: linear-gradient(135deg, #0066cc 0%, #0052a3 100%);
+        color: #ffffff;
+        padding: 48px;
+        border-radius: 12px;
+        text-align: center;
+        margin: 60px 0;
+      }
+
+      .cta-title {
+        font-size: 28px;
+        font-weight: 700;
+        margin-bottom: 16px;
+        color: #ffffff;
+      }
+
+      .cta-description {
+        font-size: 16px;
+        color: #e6f2ff;
+        margin-bottom: 32px;
+      }
+
+      .cta-button {
+        display: inline-block;
+        background: #ffffff;
+        color: #0066cc;
+        padding: 16px 48px;
+        border-radius: 8px;
+        font-size: 18px;
+        font-weight: 600;
+        text-decoration: none;
+        transition: transform 0.2s;
+      }
+
+      .cta-button:hover {
+        transform: translateY(-2px);
+      }
+
+      /* 푸터 */
+      .report-footer {
+        border-top: 1px solid #e2e8f0;
+        padding-top: 40px;
+        margin-top: 80px;
+        text-align: center;
+        color: #718096;
+        font-size: 14px;
+      }
+
+      /* 인사이트 박스 */
+      .insight-box {
+        background: #eff6ff;
+        border-left: 4px solid #0066cc;
+        padding: 24px;
+        margin: 24px 0;
+        border-radius: 4px;
+      }
+
+      .insight-label {
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        color: #0066cc;
+        font-weight: 600;
+        margin-bottom: 8px;
+      }
+
+      .insight-text {
+        font-size: 16px;
+        color: #2d3748;
+        line-height: 1.8;
+      }
+
+      /* 모바일 최적화 (카카오톡) */
+      @media (max-width: 768px) {
+        .page {
+          padding: 40px 20px;
+        }
+
+        h1 {
+          font-size: 32px;
+          line-height: 1.3;
+        }
+
+        h2 {
+          font-size: 24px;
+        }
+
+        h3 {
+          font-size: 18px;
+        }
+
+        .stat-grid {
+          grid-template-columns: 1fr;
+          gap: 16px;
+        }
+
+        .stat-value {
+          font-size: 24px;
+        }
+
+        .benchmark-table {
+          font-size: 12px;
+        }
+
+        .benchmark-table th,
+        .benchmark-table td {
+          padding: 12px 8px;
+        }
+
+        .bottleneck-metric {
+          flex-direction: column;
+          gap: 8px;
+        }
+
+        .cta-section {
+          padding: 32px 24px;
+        }
+
+        .cta-title {
+          font-size: 20px;
+        }
+
+        .cta-button {
+          padding: 12px 32px;
+          font-size: 16px;
+        }
+      }
+
+      /* 프린트 최적화 */
+      @media print {
+        .page {
+          padding: 40px;
+        }
+        .cta-section {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <!-- 커버 페이지 -->
+    <div class="page">
+      <div class="report-header">
+        <div class="logo">UNIFLOW</div>
+        <div class="report-title">비즈니스 순환 진단 리포트</div>
+        <h1>{{ user.name }}님의<br />비즈니스 성장 기회 분석</h1>
+        <div class="report-meta">
+          <span>{{ user.business_type }} | {{ user.industry }}</span>
+          <span>발행일: 2025.02.14</span>
+        </div>
+      </div>
+
+      <!-- Executive Summary -->
+      <section>
+        <h2>Executive Summary</h2>
+        <div class="card">
+          <p style="font-size: 18px; line-height: 1.8; color: #2d3748">
+            {{ user.name }}님께서 운영하시는 {{ user.industry }} 비즈니스는
+            {{ user.years_in_business }}년간 {{ user.revenue_range }} 규모로
+            성장하셨습니다. 본 진단 결과, 견고한 사업 기반 위에 구축되어
+            있으나, 운영 효율성 측면에서 개선 여지가 발견되었습니다.
+          </p>
+        </div>
+
+        <div class="stat-grid">
+          <div class="stat-card">
+            <div class="stat-label">식별된 병목 포인트</div>
+            <div class="stat-value">
+              {{ bottlenecks.bottlenecks|length }}<span class="stat-unit"
+                >개</span
+              >
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">월간 시간 손실</div>
+            <div class="stat-value">
+              {{ bottlenecks.total_monthly_loss.time }}<span class="stat-unit"
+                >시간</span
+              >
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">월간 기회비용</div>
+            <div class="stat-value">
+              {{ "{:,.0f}".format(bottlenecks.total_monthly_loss.cost / 10000)
+              }}<span class="stat-unit">만원</span>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- Page 2: 병목 포인트 분석 -->
+    <div class="page">
+      <h2>핵심 병목 포인트 분석</h2>
+
+      {% for bottleneck in bottlenecks.bottlenecks[:3] %}
+      <div class="bottleneck-item">
+        <div class="bottleneck-header">
+          <div class="bottleneck-title">
+            {{ loop.index }}. {{ bottleneck.issue }}
+          </div>
+          <div class="urgency-badge">
+            긴급도 {{ bottleneck.urgency }}/10
+          </div>
+        </div>
+
+        <div class="bottleneck-detail">
+          <p>{{ bottleneck.description }}</p>
+        </div>
+
+        <div class="bottleneck-metric">
+          <div class="metric-item">
+            <span class="metric-value">{{ bottleneck.impact_hours }}시간</span>
+            / 월 시간 손실
+          </div>
+          <div class="metric-item">
+            <span class="metric-value"
+              >{{ "{:,}".format(bottleneck.impact_cost) }}원</span
+            >
+            / 월 비용 손실
+          </div>
+          <div class="metric-item">
+            영향 범위: <span class="metric-value">{{ bottleneck.category }}</span>
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+
+      <div class="insight-box">
+        <div class="insight-label">종합 분석</div>
+        <div class="insight-text">
+          식별된 병목 포인트들로 인해 월간 총
+          {{ bottlenecks.total_monthly_loss.time }}시간,
+          {{ "{:,}".format(bottlenecks.total_monthly_loss.cost) }}원의 기회비용이
+          발생하고 있습니다. 이는 연간
+          {{ "{:,}".format(bottlenecks.total_monthly_loss.cost * 12) }}원 규모로,
+          귀사의 성장 속도를 약 {{ bottlenecks.growth_delay_months }}개월 지연시키는
+          요인으로 작용하고 있습니다.
+        </div>
+      </div>
+    </div>
+
+    <!-- Page 3: 벤치마크 분석 -->
+    <div class="page">
+      <h2>업종 벤치마크 분석</h2>
+
+      <div class="card">
+        <p style="margin-bottom: 24px; color: #718096">
+          {{ user.industry }} 업종 내 유사 규모 기업과의 비교 분석
+        </p>
+
+        <table class="benchmark-table">
+          <thead>
+            <tr>
+              <th>지표</th>
+              <th>귀사 현황</th>
+              <th>업종 상위 25%</th>
+              <th>격차</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>업무 자동화율</td>
+              <td>
+                <span class="benchmark-value benchmark-current"
+                  >{{ benchmark.current.automation_rate }}%</span
+                >
+              </td>
+              <td>
+                <span class="benchmark-value benchmark-target"
+                  >{{ benchmark.top_10_percent.automation_rate }}%</span
+                >
+              </td>
+              <td>
+                {{ benchmark.top_10_percent.automation_rate -
+                benchmark.current.automation_rate }}%p
+              </td>
+            </tr>
+            <tr>
+              <td>데이터 통합도</td>
+              <td>
+                <span class="benchmark-value benchmark-current"
+                  >{{ benchmark.current.data_integration }}%</span
+                >
+              </td>
+              <td>
+                <span class="benchmark-value benchmark-target"
+                  >{{ benchmark.top_10_percent.data_integration }}%</span
+                >
+              </td>
+              <td>
+                {{ benchmark.top_10_percent.data_integration -
+                benchmark.current.data_integration }}%p
+              </td>
+            </tr>
+            <tr>
+              <td>의사결정 속도</td>
+              <td>
+                <span class="benchmark-value benchmark-current"
+                  >{{ benchmark.current.decision_speed_days }}일</span
+                >
+              </td>
+              <td>
+                <span class="benchmark-value benchmark-target"
+                  >{{ benchmark.top_10_percent.decision_speed_days }}일</span
+                >
+              </td>
+              <td>
+                {{ benchmark.current.decision_speed_days -
+                benchmark.top_10_percent.decision_speed_days }}일 느림
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="insight-box">
+        <div class="insight-label">핵심 인사이트</div>
+        <div class="insight-text">
+          귀사는 업종 평균 대비 자동화율이
+          {{ benchmark.top_10_percent.automation_rate -
+          benchmark.current.automation_rate }}%p 낮은 수준입니다. 동일 업종 내
+          상위 25% 기업들은 평균
+          {{ benchmark.top_10_percent.automation_rate }}%의 자동화율을 달성하고
+          있으며, 이를 통해 더 빠른 의사결정과 높은 생산성을 실현하고 있습니다.
+        </div>
+      </div>
+    </div>
+
+    <!-- Page 4: 제안 -->
+    <div class="page">
+      <h2>귀사의 성장을 위한 제안</h2>
+
+      <div class="card">
+        <h3>UNIFLOW 비즈니스 순환 개선 프로그램</h3>
+        <p style="margin-bottom: 32px">
+          귀사의 진단 결과를 바탕으로 맞춤형 솔루션을 설계합니다.
+        </p>
+
+        <div class="card-subtle">
+          <h4 style="margin-bottom: 16px; font-size: 18px">프로그램 구성</h4>
+          <ul style="list-style: none; padding: 0">
+            <li style="padding: 8px 0; color: #4a5568">
+              ✓ 1:1 심층 진단 세션 (90분)
+            </li>
+            <li style="padding: 8px 0; color: #4a5568">
+              ✓ 맞춤 자동화 로드맵 설계
+            </li>
+            <li style="padding: 8px 0; color: #4a5568">
+              ✓ 3개월 집중 구현 지원
+            </li>
+            <li style="padding: 8px 0; color: #4a5568">
+              ✓ 6개월 성과 모니터링
+            </li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="cta-section">
+        <div class="cta-title">다음 단계를 함께 논의하고 싶습니다</div>
+        <p class="cta-description">
+          귀사의 비즈니스 성장을 위한 구체적인 실행 계획을 함께 수립하겠습니다.
+        </p>
+        <a href="#" class="cta-button">전략 세션 일정 조율하기</a>
+        <p style="margin-top: 24px; font-size: 14px; color: #e6f2ff">
+          상담만 받아도 손해 없습니다 | 무리한 영업은 하지 않습니다
+        </p>
+      </div>
+
+      <div class="report-footer">
+        <p>본 리포트에 대한 문의사항이 있으시면 언제든 연락 주시기 바랍니다.</p>
+        <p style="margin-top: 16px">
+          <strong>UNIFLOW</strong><br />
+          hello@uniflow.ai.kr | www.uniflow.ai.kr
+        </p>
+      </div>
+    </div>
+  </body>
+</html>
