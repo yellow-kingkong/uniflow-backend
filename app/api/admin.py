@@ -235,7 +235,15 @@ def delete_agent(agent_id: str, db: Session = Depends(get_db)):
     # 2. 초대 토큰 삭제
     db.query(InvitationToken).filter(InvitationToken.user_id == agent_id).delete()
 
-    # 3. 로컬 데이터베이스 삭제
+    # 3. Supabase invitations 테이블 정리 (이메일 기반 - 재가입 가능하도록)
+    try:
+        sb = get_supabase_admin()
+        sb.table("invitations").delete().eq("email", agent.email).execute()
+        logger.info(f"Invitations cleaned for agent: {agent.email}")
+    except Exception as inv_err:
+        logger.warning(f"Failed to clean invitations for {agent.email}: {inv_err}")
+
+    # 4. 로컬 데이터베이스 삭제
     db.delete(agent)
     db.commit()
     return {"message": "에이전트와 인증 계정이 완전히 삭제되었습니다.", "affected_vips": vip_count}
@@ -342,9 +350,17 @@ def delete_vip_hard(vip_id: str, db: Session = Depends(get_db)):
     
     # 3. 초대 토큰 삭제
     db.query(InvitationToken).filter(InvitationToken.user_id == vip_id).delete()
+
+    # 4. Supabase invitations 테이블 정리 (이메일 기반 - 재가입 즉시 가능하도록)
+    try:
+        sb = get_supabase_admin()
+        sb.table("invitations").delete().eq("email", vip.email).execute()
+        logger.info(f"Invitations cleaned for VIP: {vip.email}")
+    except Exception as inv_err:
+        logger.warning(f"Failed to clean invitations for VIP {vip.email}: {inv_err}")
     
-    # 4. 로컬 유저 삭제 및 에이전트 카운트 감소
-    agent_id = vip.created_by
+    # 5. 로컬 유저 삭제 및 에이전트 카운트 감소
+    agent_id = vip.created_by or vip.invited_by
     db.delete(vip)
     
     if agent_id:
