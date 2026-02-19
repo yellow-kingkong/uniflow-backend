@@ -355,14 +355,15 @@ def complete_diagnosis(req: DiagnosisCompleteRequest, db: Session = Depends(get_
         sb = get_supabase_admin()
 
         # 기존 레코드 확인 후 upsert
+        # ⚠️ 컬럼명은 health_index 테이블 실제 컬럼명과 일치해야 함
         sb.table("health_index").upsert({
             "vip_id": vip_id,
-            "asset": asset_score,
-            "time": time_score,
-            "body": body_score,
-            "emotion": emotion_score,
-            "network": network_score,
-            "system": system_score,
+            "asset_stability": asset_score,       # asset → asset_stability
+            "time_independence": time_score,      # time → time_independence
+            "physical_condition": body_score,     # body → physical_condition
+            "emotional_balance": emotion_score,   # emotion → emotional_balance
+            "network_power": network_score,       # network → network_power
+            "system_leverage": system_score,      # system → system_leverage
             "overall_score": overall,
         }, on_conflict="vip_id").execute()
 
