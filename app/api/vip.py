@@ -200,49 +200,18 @@ def get_vip_activities(vip_id: str, db: Session = Depends(get_db)):
 
 # --- Diagnosis Mapping Endpoints ---
 
+class DiagnosisStartRequest(BaseModel):
+    vip_id: str
+
 @router.post("/diagnosis/start")
-def diagnosis_start(vip_id: str, db: Session = Depends(get_db)):
-    """진단 프로세스 시작 (퀘스트 초기화)"""
-    return initialize_vip_quests(vip_id, db)
-
-@router.get("/diagnosis/questions")
-def diagnosis_questions(vip_id: str, db: Session = Depends(get_db)):
-    """현재 단계의 진단 질문(체크리스트) 조회"""
-    quest = _get_current_quest(vip_id, db)
-    if not quest:
-        raise HTTPException(status_code=404, detail="진행 중인 진단 항목이 없습니다.")
-    return generate_quest_questions(quest.id, db)
-
-@router.post("/diagnosis/answer")
-def diagnosis_answer(vip_id: str, req: EvaluateRequest, db: Session = Depends(get_db)):
-    """진단 답변 제출 및 평가"""
-    quest = _get_current_quest(vip_id, db)
-    if not quest:
-        raise HTTPException(status_code=404, detail="진행 중인 진단 항목이 없습니다.")
-    return evaluate_quest(quest.id, req, db)
-
-@router.post("/diagnosis/complete")
-def diagnosis_complete(vip_id: str, db: Session = Depends(get_db)):
-    """현재 진단 단계 완료 처리"""
-    quest = _get_current_quest(vip_id, db)
-    if not quest:
-        raise HTTPException(status_code=404, detail="마무리할 진단 항목이 없습니다.")
-    
-    quest.status = "completed"
-    quest.completed_at = datetime.now()
-    
-    # 다음 퀘스트 잠금 해제 로직 (이미 evaluate_quest에서 처리하지만 수동 완료 대비)
-    next_q = db.query(Quest).filter(
-        Quest.vip_id == vip_id,
-        Quest.quest_order == quest.quest_order + 1
-    ).first()
-    if next_q:
-        next_q.is_locked = False
-        
-    db.commit()
-    return {"message": "Step completed"}
-
-@router.get("/report")
-def get_diagnosis_report(vip_id: str, db: Session = Depends(get_db)):
-    """전체 진단 결과(6축 시트) 조회"""
-    return get_health_summary(vip_id, db)
+def diagnosis_start(req: DiagnosisStartRequest, db: Session = Depends(get_db)):
+    """진단 프로세스 시작"""
+    vip_id = req.vip_id
+    vip = db.query(User).filter(User.id == vip_id).first()
+    if not vip:
+        raise HTTPException(status_code=404, detail=f"VIP not found: {vip_id}")
+    existing = db.query(Quest).filter(Quest.vip_id == vip_id).first()
+    if existing:
+        return {"diagnosis_id": vip_id, "message": "기존 세션"}
+    initialize_vip_quests(vip_id, db)
+    return {"diagnosis_id": vip_id}
