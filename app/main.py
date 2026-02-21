@@ -34,7 +34,7 @@ except Exception as e:
     import logging
     logging.getLogger(__name__).error(f"DB 연결 실패: {e}")
 
-from app.api import survey, report, admin, agent, vip, community, quest, auth, payment
+from app.api import survey, report, admin, agent, vip, community, quest, auth, payment, flow_deck
 app.include_router(survey.router, prefix="/api/survey", tags=["survey"])
 app.include_router(report.router, prefix="/api/report", tags=["report"])
 app.include_router(admin.router, prefix="/api/admin", tags=["admin"])
@@ -44,3 +44,4 @@ app.include_router(community.router, prefix="/api/community", tags=["community"]
 app.include_router(quest.router, prefix="/api/quests", tags=["quests"])
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(payment.router, prefix="/api/payment", tags=["payment"])
+app.include_router(flow_deck.router, prefix="/api/flow-deck", tags=["flow-deck"])
