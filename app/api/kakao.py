@@ -15,29 +15,31 @@ settings = get_settings()
 ALIGO_URL = "https://kakaoapi.aligo.in/akv10/alimtalk/send/"
 
 # 6가지 알림톡 템플릿 정의 (send-kakao Edge Function과 동일)
+# 알리고 대시보드에 등록된 실제 템플릿 코드 사용
+# 코드가 다르면 "존재하지 않는 tpl_code" 오류 발생
 KAKAO_TEMPLATES: Dict[str, Dict[str, str]] = {
     "expiry_d7": {
-        "code": "EXP_D7",
+        "code": "UF_5841",  # UNIFLOW_구독만료_7일전
         "content": "안녕하세요, #{이름}님.\n\nUNIFLOW 구독이 7일 후(#{만료일}) 만료될 예정입니다.\n만료 전 갱신 시 서비스를 중단 없이 이용하실 수 있습니다.\n\n[구독 갱신]\n#{갱신링크}",
     },
     "expiry_d1": {
-        "code": "EXP_D1",
+        "code": "UF_5841",  # D-1 템플릿 미등록 → 7일전 코드 임시 사용 (추후 별도 등록)
         "content": "안녕하세요, #{이름}님.\n\n구독이 내일(#{만료일}) 만료됩니다.\n계속 이용을 원하시면 아래 링크에서 갱신해 주세요.\n\n[구독 갱신]\n#{갱신링크}",
     },
     "expiry_d0": {
-        "code": "EXP_D0",
+        "code": "UF_6732",  # UNIFLOW_구독만료_당일
         "content": "안녕하세요, #{이름}님.\n\nUNIFLOW 구독이 오늘(#{만료일}) 만료되었습니다.\n서비스 재이용을 원하시면 아래 링크에서 갱신해 주세요.\n\n[구독 갱신]\n#{갱신링크}",
     },
     "agent_invite": {
-        "code": "AGT_INV",
+        "code": "UF_5841",  # 초대 템플릿 미등록 → 임시 코드 (추후 별도 등록)
         "content": "안녕하세요.\n\nUNIFLOW 서비스의 에이전트로 초대되셨습니다.\n아래 링크를 통해 회원가입 후 활동을 시작하실 수 있습니다.\n\n[초대 링크]\n#{초대링크}\n\n링크 유효기간: 7일",
     },
     "vip_invite": {
-        "code": "VIP_INV",
+        "code": "UF_5841",  # VIP 초대 템플릿 미등록 → 임시 코드 (추후 별도 등록)
         "content": "안녕하세요.\n\n#{에이전트이름} 에이전트님을 통해 UNIFLOW VIP 회원으로 초대되셨습니다.\n\n[초대 링크]\n#{초대링크}\n\n링크 유효기간: 7일",
     },
     "admin_notice": {
-        "code": "ADN_NOT",
+        "code": "UF_6737",  # UNIFLOW_공지사항
         "content": "[UNIFLOW 공지사항]\n\n#{공지제목}\n\n#{공지내용}\n\n자세한 내용은 UNIFLOW 앱에서 확인하세요.",
     },
 }
