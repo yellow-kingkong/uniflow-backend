@@ -22,8 +22,13 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     anthropic_api_key: str = ""
 
-    # ─── 카카오 ──────────────────────────────────────
-    kakao_api_key: str = ""
+    # ─── 알리고 카카오 알림톡 ──────────────────────────
+    kakao_api_key: str = ""      # 알리고 API Key (= ALIGO_API_KEY)
+    kakao_api_secret: str = ""   # 알리고 로그인 ID (= ALIGO_USER_ID)
+    kakao_sender_key: str = ""   # 발신프로필키 Senderkey (= KAKAO_CHANNEL_ID)
+    kakao_sender_number: str = "" # 발신번호 (= ALIGO_SENDER_PHONE)
+    # Railway 내부 호출 인증용 시크릿
+    internal_secret: str = "uniflow-internal-2026"
 
     # ─── 토스페이먼츠 ─────────────────────────────────
     tosspayments_secret_key: str = ""
