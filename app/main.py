@@ -27,6 +27,18 @@ async def root():
 async def health_check():
     return {"status": "healthy"}
 
+@app.get("/my-ip")
+async def get_my_ip():
+    """Railway 서버의 실제 outbound IP 확인용 (알리고 IP 등록에 사용)"""
+    import httpx
+    try:
+        async with httpx.AsyncClient() as client:
+            r = await client.get("https://api.ipify.org?format=json", timeout=5)
+            return r.json()
+    except Exception as e:
+        return {"error": str(e)}
+
+
 try:
     from app.database import engine, Base
     Base.metadata.create_all(bind=engine)
