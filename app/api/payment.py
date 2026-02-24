@@ -97,23 +97,28 @@ def get_subscription_status(agent_id: str, db: Session = Depends(get_db)):
 
 
 @router.post("/upgrade")
-def upgrade_subscription(req: UpgradeRequest, db: Session = Depends(get_db)):
-    """결제 전 단계: orderId / amount / clientKey 발급"""
-    from app.models import User
-
+def upgrade_subscription(req: UpgradeRequest, db: Optional[Session] = Depends(get_db)):
+    """결제 전 단계: orderId / amount / clientKey 발급
+    DB 연결 실패 시에도 기본 가격으로 주문 생성 (special_discount 미적용)
+    """
     if req.tier not in TIER_PRICES:
         raise HTTPException(status_code=400, detail="유효하지 않은 요금제입니다.")
     if req.billing_cycle not in ("monthly", "yearly"):
         raise HTTPException(status_code=400, detail="billing_cycle은 monthly 또는 yearly여야 합니다.")
 
-    agent = db.query(User).filter(User.id == req.agent_id).first()
-    if not agent:
-        raise HTTPException(status_code=404, detail="에이전트를 찾을 수 없습니다.")
-
     base_price = TIER_PRICES[req.tier][req.billing_cycle]
 
-    # special_discount 적용
-    discount = getattr(agent, "special_discount", 0) or 0
+    # DB 연결 가능 시 special_discount 적용, 실패 시 기본 가격으로 진행
+    discount = 0
+    try:
+        if db:
+            from app.models import User
+            agent = db.query(User).filter(User.id == req.agent_id).first()
+            if agent:
+                discount = getattr(agent, "special_discount", 0) or 0
+    except Exception as e:
+        logger.warning(f"[Payment] DB 조회 실패, 기본 가격 적용: {e}")
+
     final_price = int(base_price * (1 - discount / 100))
 
     # Railway 환경변수명: TOSSPAYMENTS_CLIENT_KEY (config.py와 통일)
