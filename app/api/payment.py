@@ -25,7 +25,8 @@ TOSS_API_BASE = "https://api.tosspayments.com/v1"
 
 def _get_toss_auth_header() -> str:
     """토스페이먼츠 Basic Auth 헤더값 생성"""
-    secret_key = os.environ.get("TOSS_SECRET_KEY", "")
+    # Railway 환경변수명: TOSSPAYMENTS_SECRET_KEY (config.py와 통일)
+    secret_key = os.environ.get("TOSSPAYMENTS_SECRET_KEY", "")
     if not secret_key:
         raise HTTPException(status_code=503, detail="Toss secret key not configured")
     # 시크릿 키 + ':' → Base64 인코딩
@@ -60,9 +61,9 @@ def _verify_toss_signature(raw_body: bytes, toss_signature: str) -> bool:
     - 토스는 X-Toss-Signature 헤더에 HMAC-SHA256(시크릿키, rawBody) 값을 Base64로 전달
     - 공식 문서: https://docs.tosspayments.com/reference/webhook
     """
-    secret_key = os.environ.get("TOSS_SECRET_KEY", "")
+    secret_key = os.environ.get("TOSSPAYMENTS_SECRET_KEY", "")
     if not secret_key:
-        logger.warning("[Toss Webhook] TOSS_SECRET_KEY 미설정 — 서명 검증 생략")
+        logger.warning("[Toss Webhook] TOSSPAYMENTS_SECRET_KEY 미설정 — 서명 검증 생략")
         return False  # 키 없으면 실패 처리
 
     expected = hmac.new(
@@ -115,7 +116,8 @@ def upgrade_subscription(req: UpgradeRequest, db: Session = Depends(get_db)):
     discount = getattr(agent, "special_discount", 0) or 0
     final_price = int(base_price * (1 - discount / 100))
 
-    client_key = os.environ.get("TOSS_CLIENT_KEY", "")
+    # Railway 환경변수명: TOSSPAYMENTS_CLIENT_KEY (config.py와 통일)
+    client_key = os.environ.get("TOSSPAYMENTS_CLIENT_KEY", "")
     if not client_key:
         raise HTTPException(status_code=503, detail="Toss client key not configured")
 
