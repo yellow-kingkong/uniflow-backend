@@ -58,10 +58,16 @@ async def _generate_and_upload(
         res = supabase.storage.from_("flow-deck-files").upload(
             path=file_key,
             file=pptx_bytes,
-            file_options={"content-type": "application/vnd.openxmlformats-officedocument.presentationml.presentation"},
+            file_options={
+                "content-type": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                "upsert": "true",   # 동일 세션 재생성 시 덮어쓰기 허용
+            },
         )
+        # supabase-py 버전에 따라 에러 체크 방식이 다름 → 안전하게 처리
         if hasattr(res, "error") and res.error:
             raise RuntimeError(f"Storage 업로드 실패: {res.error}")
+        elif isinstance(res, dict) and res.get("error"):
+            raise RuntimeError(f"Storage 업로드 실패: {res.get('error')}")
 
         # 5. 공개 URL 조회
         url_res = supabase.storage.from_("flow-deck-files").get_public_url(file_key)
