@@ -528,7 +528,11 @@ def _build_html(proposal: dict, interview_data: dict, palette: dict) -> str:
 
 # ─── Puppeteer(pyppeteer) PDF 변환 ──────────────────────────────────────────
 async def _html_to_pdf_async(html_content: str) -> bytes:
-    """pyppeteer로 HTML → PDF 변환 (비동기)"""
+    """pyppeteer로 HTML → PDF 변환 (비동기)
+    
+    중요: pyppeteer v2 이후 page.waitFor() 제거됨 → asyncio.sleep() 사용
+    Railway Docker 환경: PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+    """
     try:
         from pyppeteer import launch
     except ImportError:
@@ -539,6 +543,9 @@ async def _html_to_pdf_async(html_content: str) -> bytes:
         f.write(html_content)
         tmp_path = f.name
 
+    # Linux 경로에서 file:// URL 생성 (앞에 / 두 번 연속 방지)
+    file_url = f"file://{tmp_path}" if tmp_path.startswith("/") else f"file:///{tmp_path}"
+
     try:
         browser = await launch(
             headless=True,
@@ -548,14 +555,17 @@ async def _html_to_pdf_async(html_content: str) -> bytes:
                 "--disable-dev-shm-usage",
                 "--disable-gpu",
                 "--font-render-hinting=none",
+                "--run-all-compositor-stages-before-draw",  # 렌더링 완전 대기
             ],
-            executablePath=os.environ.get("PUPPETEER_EXECUTABLE_PATH", None),
+            executablePath=os.environ.get("PUPPETEER_EXECUTABLE_PATH") or None,
         )
         page = await browser.newPage()
         await page.setViewport({"width": 1280, "height": 720})
-        await page.goto(f"file://{tmp_path}", waitUntil="networkidle2", timeout=60000)
+        await page.goto(file_url, waitUntil="networkidle2", timeout=60000)
+
         # Chart.js 렌더링 대기
-        await page.waitFor(1500)
+        # ⚠️ pyppeteer v2에서 page.waitFor() 제거됨 → asyncio.sleep() 사용
+        await asyncio.sleep(1.5)
 
         pdf_bytes = await page.pdf({
             "width": "1280px",
@@ -573,14 +583,14 @@ async def _html_to_pdf_async(html_content: str) -> bytes:
 
 
 def html_to_pdf(html_content: str) -> bytes:
-    """동기 래퍼: 이벤트 루프 있으면 nest_asyncio, 없으면 asyncio.run"""
-    try:
-        import nest_asyncio
-        nest_asyncio.apply()
-        loop = asyncio.get_event_loop()
-        return loop.run_until_complete(_html_to_pdf_async(html_content))
-    except ImportError:
-        return asyncio.run(_html_to_pdf_async(html_content))
+    """
+    동기 래퍼: _html_to_pdf_async → 동기 결과 반환.
+
+    ⚠️ flow_deck.py에서 run_in_executor()로 별도 스레드에 실행됨.
+    스레드 내부에는 실행 중인 이벤트 루프가 없으므로 asyncio.run() 직접 사용.
+    (nest_asyncio 필요 없음. 이전 nest_asyncio 방식은 uvicorn 루프와 충돌 가능)
+    """
+    return asyncio.run(_html_to_pdf_async(html_content))
 
 
 # ─── 메인 함수 ─────────────────────────────────────────────────────────────

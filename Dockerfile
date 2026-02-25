@@ -3,22 +3,26 @@ FROM python:3.11-slim
 
 # ─── 시스템 패키지 ────────────────────────────────────────────────────────
 RUN apt-get update && apt-get install -y \
-    # Chromium (pyppeteer용)
+    # Chromium (pyppeteer용) — Debian Bookworm
     chromium \
-    chromium-driver \
-    # 한국어 폰트
+    # 한국어 폰트 (Noto CJK)
     fonts-noto-cjk \
     fonts-noto-cjk-extra \
-    # 기타 의존성
+    # Chromium 실행 필수 의존성 (Bookworm 기준)
     wget \
     ca-certificates \
     libnss3 \
     libatk-bridge2.0-0 \
     libdrm2 \
     libxkbcommon0 \
-    libgbm1 \
+    libgbm-dev \
     libasound2 \
     libxshmfence1 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxrandr2 \
+    libpango-1.0-0 \
+    libcairo2 \
     --no-install-recommends \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
