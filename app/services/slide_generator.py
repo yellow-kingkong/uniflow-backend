@@ -582,12 +582,12 @@ async def _html_to_pdf_async(html_content: str) -> bytes:
         finally:
             await browser.close()
 
-    # 30초 타임아웃: 초과 시 즉시 TimeoutError → caller에서 failed 처리
+    # 60초 타임아웃: 초과 시 즉시 TimeoutError → caller에서 failed 처리
     try:
-        return await asyncio.wait_for(_run(), timeout=30)
+        return await asyncio.wait_for(_run(), timeout=60)
     except asyncio.TimeoutError:
-        logger.error("[PDF] 30초 타임아웃 — PDF 생성 실패")
-        raise RuntimeError("PDF 생성 타임아웃 (30초 초과)")
+        logger.error("[PDF] 60초 타임아웃 — PDF 생성 실패")
+        raise RuntimeError("PDF 생성 타임아웃 (60초 초과)")
 
 
 
