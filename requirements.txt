@@ -1,5 +1,8 @@
 fastapi>=0.115.0
-uvicorn[standard]>=0.32.0
+# uvicorn: standard extra 제거 (websockets 의존성 충돌 방지)
+uvicorn>=0.32.0
+# websockets: realtime==2.0.0 요구 사항 (<13, >=11) 준수
+websockets>=11,<13
 pydantic>=2.10.0
 pydantic-settings>=2.7.0
 sqlalchemy>=2.0.0
