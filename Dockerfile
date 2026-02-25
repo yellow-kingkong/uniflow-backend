@@ -8,15 +8,16 @@ RUN apt-get update && apt-get install -y \
     # 한국어 폰트 (Noto CJK)
     fonts-noto-cjk \
     fonts-noto-cjk-extra \
-    # Chromium 실행 필수 의존성 (Bookworm 기준)
+    # Chromium 실행 필수 의존성
     wget \
     ca-certificates \
     libnss3 \
     libatk-bridge2.0-0 \
     libdrm2 \
     libxkbcommon0 \
-    libgbm-dev \
-    libasound2 \
+    libgbm1 \
+    # Bookworm에서 libasound2 → libasound2-dev 로 이름 변경됨
+    libasound2-dev \
     libxshmfence1 \
     libxcomposite1 \
     libxdamage1 \
