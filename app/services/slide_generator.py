@@ -529,57 +529,66 @@ def _build_html(proposal: dict, interview_data: dict, palette: dict) -> str:
 # ─── Puppeteer(pyppeteer) PDF 변환 ──────────────────────────────────────────
 async def _html_to_pdf_async(html_content: str) -> bytes:
     """pyppeteer로 HTML → PDF 변환 (비동기)
-    
-    중요: pyppeteer v2 이후 page.waitFor() 제거됨 → asyncio.sleep() 사용
-    Railway Docker 환경: PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+
+    수정 내역:
+    - launch args: --single-process 방식으로 Railway 안정화
+    - setContent 사용 (파일 URL 불필요 → 경로 이슈 제거)
+    - page.pdf(): width/height 직접 지정 1280×720px (landscape 옵션 제거)
+    - asyncio.wait_for: 30초 타임아웃으로 무한 로딩 방지
     """
     try:
         from pyppeteer import launch
     except ImportError:
         raise RuntimeError("pyppeteer가 설치되지 않았습니다. pip install pyppeteer")
 
-    # 임시 HTML 파일 저장
-    with tempfile.NamedTemporaryFile(suffix=".html", delete=False, mode="w", encoding="utf-8") as f:
-        f.write(html_content)
-        tmp_path = f.name
-
-    # Linux 경로에서 file:// URL 생성 (앞에 / 두 번 연속 방지)
-    file_url = f"file://{tmp_path}" if tmp_path.startswith("/") else f"file:///{tmp_path}"
-
-    try:
-        browser = await launch(
-            headless=True,
-            args=[
+    async def _run() -> bytes:
+        browser = await launch({
+            "executablePath": os.environ.get(
+                "PUPPETEER_EXECUTABLE_PATH", "/usr/bin/chromium"),
+            "headless": True,
+            "args": [
                 "--no-sandbox",
                 "--disable-setuid-sandbox",
                 "--disable-dev-shm-usage",
                 "--disable-gpu",
-                "--font-render-hinting=none",
-                "--run-all-compositor-stages-before-draw",  # 렌더링 완전 대기
+                "--no-first-run",
+                "--no-zygote",
+                "--single-process",       # Railway 컨테이너 안정화 핵심
+                "--disable-extensions",
             ],
-            executablePath=os.environ.get("PUPPETEER_EXECUTABLE_PATH") or None,
-        )
-        page = await browser.newPage()
-        await page.setViewport({"width": 1280, "height": 720})
-        await page.goto(file_url, waitUntil="networkidle2", timeout=60000)
-
-        # Chart.js 렌더링 대기
-        # ⚠️ pyppeteer v2에서 page.waitFor() 제거됨 → asyncio.sleep() 사용
-        await asyncio.sleep(1.5)
-
-        pdf_bytes = await page.pdf({
-            "width": "1280px",
-            "height": "720px",
-            "printBackground": True,
-            "margin": {"top": "0", "right": "0", "bottom": "0", "left": "0"},
         })
-        await browser.close()
-        return pdf_bytes
-    finally:
         try:
-            os.unlink(tmp_path)
-        except Exception:
-            pass
+            page = await browser.newPage()
+            await page.setViewport({"width": 1280, "height": 720})
+            # setContent: 파일 URL 대신 HTML 직접 주입 (경로 이슈 없음)
+            await page.setContent(html_content, {
+                "waitUntil": "domcontentloaded",
+                "timeout": 30000,
+            })
+            # Chart.js 등 JS 렌더링 최소 대기
+            await asyncio.sleep(0.5)
+
+            # ──── PDF 출력: 1280×720 고정 (16:9), landscape 옵션 제거 ────
+            pdf_bytes = await page.pdf({
+                "width": "1280px",
+                "height": "720px",
+                "printBackground": True,
+                "margin": {
+                    "top": "0", "bottom": "0",
+                    "left": "0", "right": "0",
+                },
+            })
+            return pdf_bytes
+        finally:
+            await browser.close()
+
+    # 30초 타임아웃: 초과 시 즉시 TimeoutError → caller에서 failed 처리
+    try:
+        return await asyncio.wait_for(_run(), timeout=30)
+    except asyncio.TimeoutError:
+        logger.error("[PDF] 30초 타임아웃 — PDF 생성 실패")
+        raise RuntimeError("PDF 생성 타임아웃 (30초 초과)")
+
 
 
 def html_to_pdf(html_content: str) -> bytes:
