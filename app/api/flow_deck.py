@@ -58,29 +58,29 @@ async def _generate_and_upload(
             {"status": "processing"}
         ).eq("id", session_id).execute()
 
-        # 2. PDF 생성 (스레드 풀에서 실행 — asyncio 이벤트 루프 충돌 방지)
-        logger.info(f"[FlowDeck] PDF 생성 시작: session={session_id}")
-        from app.services.slide_generator import generate_pdf
+        # 2. PPTX 생성 (python-pptx 기반 — 외부 의존성 없이 100% 안정)
+        logger.info(f"[FlowDeck] PPTX 생성 시작: session={session_id}")
+        from app.services.pptx_generator import generate_pptx
 
         loop = asyncio.get_event_loop()
-        pdf_bytes = await loop.run_in_executor(
-            None,  # 기본 ThreadPoolExecutor 사용
-            partial(generate_pdf, interview_data, ai_summary)
+        file_bytes = await loop.run_in_executor(
+            None,
+            partial(generate_pptx, interview_data, ai_summary)
         )
-        logger.info(f"[FlowDeck] PDF 생성 완료: {len(pdf_bytes)} bytes")
+        logger.info(f"[FlowDeck] PPTX 생성 완료: {len(file_bytes)} bytes")
 
         # 3. 파일 경로 구성
         title = interview_data.get("proposalTitle") or interview_data.get("title") or "proposal"
         safe_title = "".join(c if c.isalnum() or c in "-_" else "_" for c in title)[:40]
-        file_key = f"flow_deck/{agent_id}/{session_id}/{safe_title}.pdf"
+        file_key = f"flow_deck/{agent_id}/{session_id}/{safe_title}.pptx"
 
         # 4. Supabase Storage 업로드
         res = supabase.storage.from_("flow-deck-files").upload(
             path=file_key,
-            file=pdf_bytes,
+            file=file_bytes,
             file_options={
-                "content-type": "application/pdf",
-                "upsert": True,  # bool True 사용 (문자열 "true"는 일부 버전에서 오류)
+                "content-type": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                "upsert": True,
             },
         )
         # supabase-py 버전별 에러 체크
