@@ -35,11 +35,12 @@ DEFAULT_ACCENT = RGBColor(0x1E, 0x6F, 0xD9)   # 기본 포인트 컬러
 
 # bgColor 문자열 → RGBColor 매핑
 BG_COLOR_MAP = {
-    "white":  RGBColor(0xFF, 0xFF, 0xFF),
-    "gray":   RGBColor(0xF8, 0xF9, 0xFA),
-    "cream":  RGBColor(0xFE, 0xF9, 0xEF),
-    "dark":   RGBColor(0x0D, 0x11, 0x17),
-    "navy":   RGBColor(0x0A, 0x14, 0x28),
+    "white":     RGBColor(0xFF, 0xFF, 0xFF),
+    "lightgray": RGBColor(0xF5, 0xF5, 0xF5),   # [수정 1] 프론트 "lightgray" 선택 시 매핑
+    "gray":      RGBColor(0xF8, 0xF9, 0xFA),
+    "cream":     RGBColor(0xFE, 0xF9, 0xEF),
+    "dark":      RGBColor(0x0D, 0x11, 0x17),
+    "navy":      RGBColor(0x0A, 0x14, 0x28),
 }
 
 # fontFamily 문자열 → 폰트명 매핑
@@ -75,7 +76,7 @@ def _parse_hex(hex_str: str, fallback: RGBColor = DEFAULT_ACCENT) -> RGBColor:
 
 def _is_dark(color: RGBColor) -> bool:
     """배경색이 어두우면 True (밝기 기준: 0.35 이하)"""
-    r, g, b = color.red / 255, color.green / 255, color.blue / 255
+    r, g, b = color[0] / 255, color[1] / 255, color[2] / 255
     return (0.299 * r + 0.587 * g + 0.114 * b) < 0.35
 
 
@@ -215,7 +216,7 @@ def _render_cover(prs, slide_data: dict, palette: dict, interview_data: dict,
     # 우측 장식 사각형들
     _add_rect(s, W - Inches(3.5), 0, Inches(3.5), H, acc)
     _add_rect(s, W - Inches(3.5), 0, Inches(0.08), H,
-              RGBColor(max(0, acc.red - 40), max(0, acc.green - 40), max(0, acc.blue - 40)))
+              RGBColor(max(0, acc[0] - 40), max(0, acc[1] - 40), max(0, acc[2] - 40)))
 
     # 메인 제목 (우측 장식 영역 제외한 좌측 영역에 배치)
     title_text = (slide_data.get("title") or
@@ -275,7 +276,7 @@ def _render_executive_summary(prs, slide_data: dict, palette: dict, num: int, to
     gm = slide_data.get("governing_message", "")
     if gm:
         _add_rect(s, Inches(0.3), Inches(0.95), W - Inches(0.6), Inches(0.65),
-                  RGBColor(max(0, acc.red - 20), max(0, acc.green - 20), acc.blue), None)
+                  RGBColor(max(0, acc[0] - 20), max(0, acc[1] - 20), acc[2]), None)
         _txb(s, f"  {gm}", Inches(0.3), Inches(0.95), W - Inches(0.6), Inches(0.65),
              font, 14, True, WHITE, PP_ALIGN.LEFT, italic=True)
 
@@ -328,9 +329,9 @@ def _render_content_slide(prs, slide_data: dict, palette: dict, num: int, total:
     title_c = WHITE if is_dark_bg else palette["title_color"]
     body_c  = RGBColor(0xDD, 0xEE, 0xFF) if is_dark_bg else NEAR_BLACK
     accent_light = RGBColor(
-        min(255, acc.red + 60 if is_dark_bg else acc.red + 180),
-        min(255, acc.green + 40 if is_dark_bg else acc.green + 120),
-        min(255, acc.blue + 30 if is_dark_bg else acc.blue + 80),
+        min(255, acc[0] + 60 if is_dark_bg else acc[0] + 180),
+        min(255, acc[1] + 40 if is_dark_bg else acc[1] + 120),
+        min(255, acc[2] + 30 if is_dark_bg else acc[2] + 80),
     )
 
     # 슬라이드 번호 배지
@@ -368,7 +369,7 @@ def _render_content_slide(prs, slide_data: dict, palette: dict, num: int, total:
     if tp:
         tag_text = "  ·  ".join(tp[:4])
         _add_rect(s, Inches(0.3), H - Inches(1.2), W * 0.65 - Inches(0.4), Inches(0.9),
-                  RGBColor(max(0, acc.red - 30), max(0, acc.green - 30), max(0, acc.blue - 30))
+                  RGBColor(max(0, acc[0] - 30), max(0, acc[1] - 30), max(0, acc[2] - 30))
                   if is_dark_bg else accent_light)
         _txb(s, "  " + tag_text, Inches(0.3), H - Inches(1.2),
              W * 0.65 - Inches(0.4), Inches(0.9),
@@ -379,7 +380,7 @@ def _render_content_slide(prs, slide_data: dict, palette: dict, num: int, total:
     # 큰 장식 사각형
     _add_rect(s, rx, Inches(0.4), W * 0.3, H - Inches(0.8), acc)
     _add_rect(s, rx + W * 0.18, Inches(0.4), W * 0.12, H - Inches(0.8),
-              RGBColor(max(0, acc.red - 50), max(0, acc.green - 50), max(0, acc.blue - 50)))
+              RGBColor(max(0, acc[0] - 50), max(0, acc[1] - 50), max(0, acc[2] - 50)))
     # 장식 내 슬라이드 번호
     _txb(s, f"{num:02d}", rx + W * 0.04, H - Inches(2.0), W * 0.22, Inches(1.5),
          font, 72, True, RGBColor(0xFF, 0xFF, 0xFF) if True else acc,
@@ -675,7 +676,7 @@ def _render_closing(prs, slide_data: dict, palette: dict, interview_data: dict,
     # 좌측 색깔 바
     _add_rect(s, 0, 0, Inches(3.5), H, acc)
     _add_rect(s, Inches(3.42), 0, Inches(0.08), H,
-              RGBColor(max(0, acc.red - 40), max(0, acc.green - 40), max(0, acc.blue - 40)))
+              RGBColor(max(0, acc[0] - 40), max(0, acc[1] - 40), max(0, acc[2] - 40)))
 
     # 좌측 "감사합니다" 또는 closing 제목
     closing_title = slide_data.get("title") or "감사합니다"
