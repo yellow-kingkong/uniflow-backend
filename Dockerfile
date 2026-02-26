@@ -1,19 +1,11 @@
-# Railway용 Dockerfile — WeasyPrint + 한국어 폰트 지원
+# Railway용 Dockerfile — html2pdf.app API + 한국어 폰트 지원
 FROM python:3.11-slim
 
 # ─── 시스템 패키지 ────────────────────────────────────────────────────────
 RUN apt-get update && apt-get install -y \
-    # 한국어 폰트 (Noto CJK)
+    # 한국어 폰트 (PPTX 생성용 Noto CJK)
     fonts-noto-cjk \
     fonts-noto-cjk-extra \
-    # WeasyPrint 의존성 (Pango, Cairo 기반 렌더링)
-    libpango-1.0-0 \
-    libpangoft2-1.0-0 \
-    libpangocairo-1.0-0 \
-    libcairo2 \
-    libgdk-pixbuf-2.0-0 \
-    libffi-dev \
-    shared-mime-info \
     ca-certificates \
     --no-install-recommends \
     && apt-get clean \

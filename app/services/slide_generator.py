@@ -1,18 +1,16 @@
 """
-slide_generator.py — GPT JSON → HTML → WeasyPrint PDF 변환 (v2)
-- pyppeteer(Chromium) 제거 → weasyprint(순수 Python) 사용
-- Railway 컨테이너에서 Chromium 없이 안정적 PDF 생성
-- 슬라이드 크기: A4 가로(297×210mm) ≈ 16:9 비율
-- 한국어: Noto Sans KR Google Fonts + 시스템 폰트 폴백
-- 차트: CSS 기반 막대 차트 (JS 불필요, weasyprint 호환)
+slide_generator.py — GPT JSON → HTML → html2pdf.app API PDF 변환 (v3)
+- weasyprint/pyppeteer 완전 제거 → html2pdf.app REST API 사용
+- 외부 서버 기반 렌더링: Railway 환경 의존성 없음, 한국어 완벽 지원
+- 슬라이드 크기: 1280×720px (16:9)
+- 한국어: Noto Sans KR Google Fonts
 """
 
-import io
 import json
 import logging
 import os
 import re
-import tempfile
+import requests
 from datetime import date
 from typing import Optional
 
@@ -530,24 +528,35 @@ def _build_html(proposal: dict, interview_data: dict, palette: dict) -> str:
 </html>"""
 
 
-# ─── WeasyPrint PDF 변환 ─────────────────────────────────────────────────
+# ─── html2pdf.app API PDF 변환 ───────────────────────────────────────────
 def html_to_pdf(html_content: str) -> bytes:
     """
-    weasyprint로 HTML → PDF 변환 (동기, Chromium 불필요).
-    Railway 환경에서 안정적으로 동작.
+    html2pdf.app REST API로 HTML → PDF 변환.
+    외부 렌더링 서버 사용 → Railway 환경 의존성 없음.
+    환경변수 HTML2PDF_API_KEY 필요.
     """
-    try:
-        from weasyprint import HTML, CSS
-        from weasyprint.text.fonts import FontConfiguration
-    except ImportError:
-        raise RuntimeError(
-            "weasyprint가 설치되지 않았습니다. pip install weasyprint"
-        )
+    api_key = os.environ.get("HTML2PDF_API_KEY", "")
+    if not api_key:
+        logger.warning("[PDF] HTML2PDF_API_KEY 미설정 — PDF 생성 불가")
+        raise RuntimeError("HTML2PDF_API_KEY 환경변수가 설정되지 않았습니다.")
 
-    font_config = FontConfiguration()
-    html_obj = HTML(string=html_content, base_url=None)
-    pdf_bytes = html_obj.write_pdf(font_config=font_config)
-    logger.info(f"[PDF] WeasyPrint 변환 완료: {len(pdf_bytes)} bytes")
+    logger.info("[PDF] html2pdf.app API 호출 중...")
+    response = requests.post(
+        "https://api.html2pdf.app/v1/generate",
+        json={
+            "html": html_content,
+            "apiKey": api_key,
+            "landscape": True,
+            "width": 1280,
+            "height": 720,
+            "margin": {"top": 0, "right": 0, "bottom": 0, "left": 0},
+            "printBackground": True,
+        },
+        timeout=60,  # 60초 타임아웃
+    )
+    response.raise_for_status()
+    pdf_bytes = response.content
+    logger.info(f"[PDF] html2pdf.app 변환 완료: {len(pdf_bytes)} bytes")
     return pdf_bytes
 
 
