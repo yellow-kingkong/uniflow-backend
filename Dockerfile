@@ -1,35 +1,23 @@
-# Railway용 Dockerfile — pyppeteer + 한국어 폰트 지원
+# Railway용 Dockerfile — WeasyPrint + 한국어 폰트 지원
 FROM python:3.11-slim
 
 # ─── 시스템 패키지 ────────────────────────────────────────────────────────
 RUN apt-get update && apt-get install -y \
-    # Chromium (pyppeteer용) — Debian Bookworm
-    chromium \
     # 한국어 폰트 (Noto CJK)
     fonts-noto-cjk \
     fonts-noto-cjk-extra \
-    # Chromium 실행 필수 의존성
-    wget \
-    ca-certificates \
-    libnss3 \
-    libatk-bridge2.0-0 \
-    libdrm2 \
-    libxkbcommon0 \
-    libgbm1 \
-    # Bookworm에서 libasound2 → libasound2-dev 로 이름 변경됨
-    libasound2-dev \
-    libxshmfence1 \
-    libxcomposite1 \
-    libxdamage1 \
-    libxrandr2 \
+    # WeasyPrint 의존성 (Pango, Cairo 기반 렌더링)
     libpango-1.0-0 \
+    libpangoft2-1.0-0 \
+    libpangocairo-1.0-0 \
     libcairo2 \
+    libgdk-pixbuf2.0-0 \
+    libffi-dev \
+    shared-mime-info \
+    ca-certificates \
     --no-install-recommends \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
-
-# ─── pyppeteer에 Chromium 경로 지정 ──────────────────────────────────────
-ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
 
 # ─── Python 작업 디렉토리 ────────────────────────────────────────────────
 WORKDIR /app

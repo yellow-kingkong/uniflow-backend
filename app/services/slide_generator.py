@@ -1,13 +1,12 @@
 """
-slide_generator.py — GPT JSON → HTML → Puppeteer PDF 변환
-- slde_number, type, title, governing_message, body, talking_points, visual_suggestion
-- 슬라이드 크기: 1280×720px (16:9)
-- 한국어: Noto Sans KR → 맑은고딕 폴백
-- 차트: Chart.js CDN (데이터 없으면 샘플)
-- pyppeteer로 HTML → PDF 변환
+slide_generator.py — GPT JSON → HTML → WeasyPrint PDF 변환 (v2)
+- pyppeteer(Chromium) 제거 → weasyprint(순수 Python) 사용
+- Railway 컨테이너에서 Chromium 없이 안정적 PDF 생성
+- 슬라이드 크기: A4 가로(297×210mm) ≈ 16:9 비율
+- 한국어: Noto Sans KR Google Fonts + 시스템 폰트 폴백
+- 차트: CSS 기반 막대 차트 (JS 불필요, weasyprint 호환)
 """
 
-import asyncio
 import io
 import json
 import logging
@@ -41,30 +40,49 @@ def _is_dark(hex_color: str) -> bool:
     try:
         h = hex_color.lstrip("#")
         r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
-        return (0.299 * r + 0.587 * g + 0.114 * b) < 89  # 0~255 기준 89 ≈ 0.35 * 255
+        return (0.299 * r + 0.587 * g + 0.114 * b) < 89
     except Exception:
         return False
 
 
-# ─── 공통 CSS ─────────────────────────────────────────────────────────────
+def _darken(hex_color: str, amt: int = 40) -> str:
+    """hex 색상을 amt만큼 어둡게"""
+    try:
+        h = hex_color.lstrip("#")
+        r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+        return f"#{max(0, r-amt):02X}{max(0, g-amt):02X}{max(0, b-amt):02X}"
+    except Exception:
+        return hex_color
+
+
+# ─── 공통 CSS (WeasyPrint 호환) ───────────────────────────────────────────
 def _common_css(accent: str, bg: str) -> str:
     is_dark = _is_dark(bg)
-    text_color   = "#FFFFFF" if is_dark else "#1A1A1A"
-    sub_color    = "#AABBCC" if is_dark else "#555555"
-    card_bg      = "#1E2A3A" if is_dark else "#F0F2F5"
-    gm_color     = "#FFFFFF"
+    text_color = "#FFFFFF" if is_dark else "#1A1A1A"
+    sub_color  = "#AABBCC" if is_dark else "#555555"
+    card_bg    = "#1E2A3A" if is_dark else "#F0F2F5"
     return f"""
-@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap');
 * {{ margin:0; padding:0; box-sizing:border-box; }}
 body {{
-  width:1280px; height:720px; overflow:hidden;
-  font-family: 'Noto Sans KR', 'Malgun Gothic', '맑은 고딕', sans-serif;
+  font-family: 'Malgun Gothic', 'AppleGothic', 'Noto Sans KR', 'NanumGothic', sans-serif;
   background:{bg};
   color:{text_color};
+  font-size:13pt;
 }}
+.slide-page {{
+  width:297mm; height:167mm;
+  page-break-after:always;
+  overflow:hidden;
+  position:relative;
+  background:{bg};
+}}
+.slide-page:last-child {{ page-break-after:auto; }}
 .slide {{
-  width:1280px; height:720px; position:relative; overflow:hidden;
-  display:flex; flex-direction:column;
+  width:100%; height:100%;
+  position:relative;
+  overflow:hidden;
+  display:flex;
+  flex-direction:column;
 }}
 .accent-bar {{ background:{accent}; }}
 .accent-color {{ color:{accent}; }}
@@ -73,20 +91,21 @@ body {{
 .text-sub  {{ color:{sub_color}; }}
 .card-bg   {{ background:{card_bg}; }}
 .gm-box {{
-  background:{accent}; color:{gm_color};
-  padding:10px 18px; font-size:15px; font-weight:700;
-  font-style:italic; border-radius:4px; margin:10px 0;
+  background:{accent}; color:#fff;
+  padding:8pt 14pt; font-size:11pt; font-weight:700;
+  font-style:italic; border-radius:3pt; margin:8pt 0;
   line-height:1.4;
 }}
 .slide-num-badge {{
-  display:inline-flex; align-items:center; justify-content:center;
-  width:34px; height:34px; background:{accent}; color:#fff;
-  font-weight:700; font-size:13px; border-radius:4px;
+  display:inline-block; text-align:center;
+  width:26pt; height:26pt; line-height:26pt;
+  background:{accent}; color:#fff;
+  font-weight:700; font-size:11pt; border-radius:3pt;
   flex-shrink:0;
 }}
 .page-num {{
-  position:absolute; bottom:10px; right:20px;
-  font-size:11px; color:{sub_color};
+  position:absolute; bottom:6pt; right:14pt;
+  font-size:9pt; color:{sub_color};
 }}
 """
 
@@ -94,126 +113,125 @@ body {{
 # ─── 슬라이드 타입별 HTML 생성 함수 ───────────────────────────────────────
 
 def _html_cover(slide: dict, palette: dict, interview_data: dict, total: int) -> str:
-    accent = palette["accent"]
-    bg     = palette["bg"]
-    is_dark = _is_dark(bg)
-    text   = "#FFFFFF" if is_dark else "#002050"
-    sub    = "#AABBCC" if is_dark else "#666666"
-    title  = slide.get("title") or interview_data.get("proposalTitle") or "제안서"
-    subtitle = interview_data.get("proposalSubtitle") or slide.get("governing_message","")
-    proposer = interview_data.get("proposerInfo","UNIFLOW")
-    today  = date.today().strftime("%Y.%m")
+    accent   = palette["accent"]
+    bg       = palette["bg"]
+    is_dark  = _is_dark(bg)
+    text     = "#FFFFFF" if is_dark else "#002050"
+    sub      = "#AABBCC" if is_dark else "#666666"
+    title    = slide.get("title") or interview_data.get("proposalTitle") or "제안서"
+    subtitle = interview_data.get("proposalSubtitle") or slide.get("governing_message", "")
+    proposer = interview_data.get("proposerInfo", "UNIFLOW")
+    today    = date.today().strftime("%Y.%m")
+    dark_acc = _darken(accent, 30)
 
-    # accent accent hex → slightly darker
-    def darken(h: str, amt=30) -> str:
-        try:
-            h = h.lstrip("#")
-            r,g,b = int(h[0:2],16), int(h[2:4],16), int(h[4:6],16)
-            return f"#{max(0,r-amt):02X}{max(0,g-amt):02X}{max(0,b-amt):02X}"
-        except Exception:
-            return h
-    dark_accent = darken(accent)
+    subtitle_html = f'<div style="font-size:13pt;color:{sub};margin-bottom:20pt;">{subtitle}</div>' if subtitle else ""
 
     return f"""
-<div class="slide" style="background:{bg};">
+<div style="position:relative;width:100%;height:167mm;background:{bg};overflow:hidden;">
   <!-- 우측 컬러 패널 -->
-  <div style="position:absolute;top:0;right:0;width:420px;height:720px;background:{accent};"></div>
-  <div style="position:absolute;top:0;right:418px;width:3px;height:720px;background:{dark_accent};"></div>
+  <div style="position:absolute;top:0;right:0;width:100mm;height:167mm;background:{accent};"></div>
+  <div style="position:absolute;top:0;right:99.5mm;width:1.5pt;height:167mm;background:{dark_acc};"></div>
   <!-- 상단 선 -->
-  <div style="position:absolute;top:0;left:0;right:0;height:8px;background:{accent};"></div>
+  <div style="position:absolute;top:0;left:0;right:0;height:6pt;background:{accent};"></div>
 
-  <!-- 좌측 메인 콘텐츠 -->
-  <div style="position:absolute;top:60px;left:60px;right:440px;">
-    <div style="font-size:40px;font-weight:900;color:{text};line-height:1.25;margin-bottom:20px;">{title}</div>
-    {f'<div style="font-size:17px;color:{sub};margin-bottom:30px;">{subtitle}</div>' if subtitle else ''}
-    <div style="width:260px;height:2px;background:{accent};margin-bottom:16px;"></div>
-    <div style="font-size:14px;color:{sub};">{proposer}</div>
+  <!-- 좌측 콘텐츠 -->
+  <div style="position:absolute;top:40pt;left:40pt;right:110mm;">
+    <div style="font-size:28pt;font-weight:900;color:{text};line-height:1.25;margin-bottom:14pt;">{title}</div>
+    {subtitle_html}
+    <div style="width:180pt;height:2pt;background:{accent};margin-bottom:10pt;"></div>
+    <div style="font-size:11pt;color:{sub};">{proposer}</div>
   </div>
 
-  <!-- 우측 패널 내 날짜·회사 -->
-  <div style="position:absolute;bottom:40px;right:20px;width:380px;text-align:center;color:#fff;">
-    <div style="font-size:20px;font-weight:700;">{proposer.split('/')[-1].strip() if '/' in proposer else 'UNIFLOW'}</div>
-    <div style="font-size:13px;opacity:.7;margin-top:6px;">{today}</div>
+  <!-- 우측 패널 내 정보 -->
+  <div style="position:absolute;bottom:30pt;right:5mm;width:90mm;text-align:center;color:#fff;">
+    <div style="font-size:15pt;font-weight:700;">{proposer.split('/')[-1].strip() if '/' in proposer else 'UNIFLOW'}</div>
+    <div style="font-size:11pt;opacity:.7;margin-top:4pt;">{today}</div>
   </div>
 </div>
 """
 
 
 def _html_executive_summary(slide: dict, palette: dict, num: int, total: int) -> str:
-    accent   = palette["accent"]
-    bg       = palette["bg"]
-    is_dark  = _is_dark(bg)
-    text     = "#FFFFFF" if is_dark else "#1A1A1A"
-    card_bg  = "#1E2A3A" if is_dark else "#F0F2F5"
-    title    = slide.get("title","핵심 요약")
-    gm       = slide.get("governing_message","")
-    points   = slide.get("talking_points") or []
+    accent  = palette["accent"]
+    bg      = palette["bg"]
+    is_dark = _is_dark(bg)
+    text    = "#FFFFFF" if is_dark else "#1A1A1A"
+    card_bg = "#1E2A3A" if is_dark else "#F0F2F5"
+    title   = slide.get("title", "핵심 요약")
+    gm      = slide.get("governing_message", "")
+    points  = slide.get("talking_points") or []
     if not points:
-        body  = slide.get("body","")
+        body   = slide.get("body", "")
         points = [l.strip() for l in body.split("\n") if l.strip()][:3]
     if not points:
-        points = ["핵심 내용 1","핵심 내용 2","핵심 내용 3"]
+        points = ["핵심 내용 1", "핵심 내용 2", "핵심 내용 3"]
     points = points[:3]
 
-    cards_html = ""
-    nums = ["①","②","③"]
+    nums = ["①", "②", "③"]
+    cards = ""
     for i, pt in enumerate(points):
-        cards_html += f"""
-        <div style="flex:1;background:{card_bg};border:1.5px solid {accent};border-radius:10px;padding:22px 18px;display:flex;flex-direction:column;gap:14px;">
-          <div style="width:36px;height:36px;background:{accent};border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:16px;color:#fff;">{nums[i]}</div>
-          <div style="font-size:13px;color:{text};line-height:1.6;">{pt}</div>
+        cards += f"""
+        <div style="flex:1;background:{card_bg};border:1.5pt solid {accent};border-radius:6pt;padding:14pt 12pt;margin:0 4pt;">
+          <div style="width:26pt;height:26pt;line-height:26pt;text-align:center;background:{accent};border-radius:50%;font-weight:700;font-size:13pt;color:#fff;margin-bottom:10pt;">{nums[i]}</div>
+          <div style="font-size:11pt;color:{text};line-height:1.6;">{pt}</div>
         </div>"""
 
+    gm_html = f'<div class="gm-box">{gm}</div>' if gm else ""
+
     return f"""
-<div class="slide" style="background:{bg};padding:36px 50px;">
-  <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">
+<div style="background:{bg};padding:26pt 36pt;height:167mm;position:relative;overflow:hidden;">
+  <div style="display:flex;align-items:center;gap:8pt;margin-bottom:8pt;">
     <div class="slide-num-badge">{num}</div>
-    <div style="font-size:24px;font-weight:800;color:{text};">{title}</div>
+    <div style="font-size:18pt;font-weight:800;color:{text};">{title}</div>
   </div>
-  {f'<div class="gm-box">{gm}</div>' if gm else ''}
-  <div style="display:flex;gap:16px;margin-top:16px;flex:1;">{cards_html}</div>
+  {gm_html}
+  <div style="display:flex;margin-top:10pt;">{cards}</div>
   <div class="page-num">{num} / {total}</div>
 </div>
 """
 
 
 def _html_content_slide(slide: dict, palette: dict, num: int, total: int) -> str:
-    accent   = palette["accent"]
-    bg       = palette["bg"]
-    is_dark  = _is_dark(bg)
-    text     = "#FFFFFF" if is_dark else "#1A1A1A"
-    sub      = "#AABBCC" if is_dark else "#555555"
-    def darken(h,a=40):
-        try:
-            h2=h.lstrip("#"); r,g,b=int(h2[0:2],16),int(h2[2:4],16),int(h2[4:6],16)
-            return f"#{max(0,r-a):02X}{max(0,g-a):02X}{max(0,b-a):02X}"
-        except: return h
-    title    = slide.get("title","")
-    gm       = slide.get("governing_message","")
-    body     = slide.get("body","")
-    tp       = slide.get("talking_points") or []
-    vs       = slide.get("visual_suggestion","")
+    accent  = palette["accent"]
+    bg      = palette["bg"]
+    is_dark = _is_dark(bg)
+    text    = "#FFFFFF" if is_dark else "#1A1A1A"
+    sub     = "#AABBCC" if is_dark else "#555555"
+    dark_acc = _darken(accent, 40)
+
+    title  = slide.get("title", "")
+    gm     = slide.get("governing_message", "")
+    body   = slide.get("body", "")
+    tp     = slide.get("talking_points") or []
+    vs     = slide.get("visual_suggestion", "")
+
     body_lines = [l.strip() for l in body.split("\n") if l.strip()]
-    bullets  = "".join(f'<li style="margin-bottom:8px;font-size:13px;color:{text};line-height:1.6;">▸ {l}</li>' for l in body_lines[:8])
-    tags     = "  ·  ".join(tp[:4]) if tp else ""
+    bullets = "".join(
+        f'<div style="margin-bottom:5pt;font-size:11pt;color:{text};line-height:1.6;">▸ {l}</div>'
+        for l in body_lines[:8]
+    )
+    tags = "  ·  ".join(tp[:4]) if tp else ""
+    tags_html = f'<div style="background:{dark_acc};padding:7pt 12pt;border-radius:4pt;font-size:10pt;color:#fff;margin-top:6pt;">{tags}</div>' if tags else ""
+    gm_html = f'<div class="gm-box">{gm}</div>' if gm else f'<div style="height:3pt;background:{accent};border-radius:2pt;margin:3pt 0;"></div>'
+    vs_html = f'<div style="position:absolute;bottom:16pt;right:4pt;font-size:10pt;color:rgba(255,255,255,0.65);font-style:italic;text-align:center;padding:0 6pt;">{vs[:50]}</div>' if vs else ""
 
     return f"""
-<div class="slide" style="background:{bg};display:flex;">
+<div style="background:{bg};display:flex;height:167mm;position:relative;overflow:hidden;">
   <!-- 좌측 65% -->
-  <div style="width:65%;padding:36px 40px 36px 50px;display:flex;flex-direction:column;gap:10px;">
-    <div style="display:flex;align-items:center;gap:12px;">
+  <div style="width:65%;padding:26pt 28pt 26pt 36pt;display:flex;flex-direction:column;gap:7pt;overflow:hidden;">
+    <div style="display:flex;align-items:center;gap:8pt;">
       <div class="slide-num-badge">{num}</div>
-      <div style="font-size:22px;font-weight:800;color:{text};">{title}</div>
+      <div style="font-size:17pt;font-weight:800;color:{text};">{title}</div>
     </div>
-    {f'<div class="gm-box">{gm}</div>' if gm else f'<div style="height:4px;background:{accent};border-radius:2px;margin:4px 0;"></div>'}
-    <ul style="list-style:none;flex:1;overflow:hidden;">{bullets}</ul>
-    {f'<div style="background:{darken(accent,10)};padding:10px 16px;border-radius:6px;font-size:12px;color:#fff;margin-top:6px;">{tags}</div>' if tags else ''}
+    {gm_html}
+    <div style="overflow:hidden;">{bullets}</div>
+    {tags_html}
   </div>
   <!-- 우측 35% 장식 -->
-  <div style="width:35%;background:{accent};position:relative;display:flex;align-items:center;justify-content:center;">
-    <div style="position:absolute;top:0;right:0;width:40%;height:100%;background:{darken(accent,40)};"></div>
-    <div style="font-size:100px;font-weight:900;color:rgba(255,255,255,0.15);z-index:1;">{num:02d}</div>
-    {f'<div style="position:absolute;bottom:20px;left:10px;right:0;font-size:11px;color:rgba(255,255,255,0.6);font-style:italic;text-align:center;padding:0 8px;">{vs[:50]}</div>' if vs else ''}
+  <div style="width:35%;background:{accent};position:relative;display:flex;align-items:center;justify-content:center;overflow:hidden;">
+    <div style="position:absolute;top:0;right:0;width:40%;height:100%;background:{dark_acc};"></div>
+    <div style="font-size:80pt;font-weight:900;color:rgba(255,255,255,0.15);z-index:1;">{num:02d}</div>
+    {vs_html}
   </div>
   <div class="page-num" style="color:rgba(255,255,255,0.6);">{num} / {total}</div>
 </div>
@@ -221,108 +239,101 @@ def _html_content_slide(slide: dict, palette: dict, num: int, total: int) -> str
 
 
 def _html_data_chart(slide: dict, palette: dict, num: int, total: int) -> str:
+    """
+    차트: CSS 막대 차트 (Chart.js 불필요, weasyprint 완전 호환)
+    """
     accent  = palette["accent"]
     bg      = palette["bg"]
     is_dark = _is_dark(bg)
     text    = "#FFFFFF" if is_dark else "#1A1A1A"
-    title   = slide.get("title","데이터 분석")
-    gm      = slide.get("governing_message","")
-    body    = slide.get("body","")
+    card_bg = "#1E2A3A" if is_dark else "#F0F2F5"
+
+    title   = slide.get("title", "데이터 분석")
+    gm      = slide.get("governing_message", "")
+    body    = slide.get("body", "")
     tp      = slide.get("talking_points") or []
 
-    # 차트 데이터 추출
+    # 수치 추출
     numbers = re.findall(r"(\d+(?:\.\d+)?)\s*%?", body)
     nums_f  = [float(n) for n in numbers[:5]]
     if len(nums_f) >= 2:
         labels = [f"지표{i+1}" for i in range(len(nums_f))]
         data   = nums_f
     else:
-        labels = ["도입 전","1개월 후","3개월 후","6개월 후","1년 후"]
-        data   = [100, 112, 128, 145, 168]
+        labels = ["도입 전", "1개월", "3개월", "6개월", "1년"]
+        data   = [100.0, 112.0, 128.0, 145.0, 168.0]
 
-    labels_js = json.dumps(labels, ensure_ascii=False)
-    data_js   = json.dumps(data)
+    max_val = max(data) if data else 1
+    bar_w   = 100 // len(data)
+
+    bars = ""
+    for i, (label, val) in enumerate(zip(labels, data)):
+        pct = int(val / max_val * 100)
+        bars += f"""
+        <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4pt;margin:0 3pt;">
+          <div style="font-size:10pt;font-weight:700;color:{text};">{val:.0f}</div>
+          <div style="width:100%;background:{accent};height:{max(pct, 5)}pt;border-radius:3pt 3pt 0 0;min-height:4pt;"></div>
+          <div style="font-size:9pt;color:{text};text-align:center;">{label}</div>
+        </div>"""
+
     interp    = tp[0] if tp else ""
+    gm_html   = f'<div class="gm-box">{gm}</div>' if gm else ""
+    interp_html = f'<div style="background:{accent};padding:9pt 14pt;border-radius:4pt;font-size:11pt;color:#fff;margin-top:8pt;">📌 {interp}</div>' if interp else ""
 
     return f"""
-<div class="slide" style="background:{bg};padding:36px 50px;display:flex;flex-direction:column;">
-  <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;">
+<div style="background:{bg};padding:26pt 36pt;height:167mm;position:relative;overflow:hidden;display:flex;flex-direction:column;">
+  <div style="display:flex;align-items:center;gap:8pt;margin-bottom:7pt;">
     <div class="slide-num-badge">{num}</div>
-    <div style="font-size:22px;font-weight:800;color:{text};">{title}</div>
+    <div style="font-size:17pt;font-weight:800;color:{text};">{title}</div>
   </div>
-  {f'<div class="gm-box">{gm}</div>' if gm else ''}
-  <div style="flex:1;position:relative;margin:10px 0;">
-    <canvas id="chart{num}" style="max-height:380px;"></canvas>
-  </div>
-  {f'<div style="background:{accent};padding:12px 18px;border-radius:6px;font-size:13px;color:#fff;margin-top:8px;">📌 {interp}</div>' if interp else ''}
+  {gm_html}
+  <!-- CSS 막대 차트 -->
+  <div style="flex:1;display:flex;align-items:flex-end;background:{card_bg};border-radius:6pt;padding:14pt 10pt 8pt;margin-top:8pt;">{bars}</div>
+  {interp_html}
   <div class="page-num">{num} / {total}</div>
 </div>
-<script>
-(function(){{
-  var ctx = document.getElementById('chart{num}').getContext('2d');
-  new Chart(ctx, {{
-    type:'bar',
-    data:{{
-      labels:{labels_js},
-      datasets:[{{
-        label:'성과 지표',
-        data:{data_js},
-        backgroundColor:'{accent}CC',
-        borderColor:'{accent}',
-        borderWidth:2,
-        borderRadius:6,
-      }}]
-    }},
-    options:{{
-      responsive:true, maintainAspectRatio:false,
-      plugins:{{legend:{{display:false}}}},
-      scales:{{y:{{beginAtZero:true}}}}
-    }}
-  }});
-}})();
-</script>
 """
 
 
 def _html_timeline(slide: dict, palette: dict, num: int, total: int) -> str:
-    accent   = palette["accent"]
-    bg       = palette["bg"]
-    is_dark  = _is_dark(bg)
-    text     = "#FFFFFF" if is_dark else "#1A1A1A"
-    sub      = "#AABBCC" if is_dark else "#555555"
-    title    = slide.get("title","실행 계획")
-    gm       = slide.get("governing_message","")
-    points   = slide.get("talking_points") or []
+    accent  = palette["accent"]
+    bg      = palette["bg"]
+    is_dark = _is_dark(bg)
+    text    = "#FFFFFF" if is_dark else "#1A1A1A"
+    title   = slide.get("title", "실행 계획")
+    gm      = slide.get("governing_message", "")
+    points  = slide.get("talking_points") or []
     if not points:
-        body   = slide.get("body","")
+        body   = slide.get("body", "")
         points = [l.strip() for l in body.split("\n") if l.strip()][:5]
     if not points:
-        points = ["Phase 1","Phase 2","Phase 3"]
+        points = ["Phase 1", "Phase 2", "Phase 3"]
     points = points[:5]
-    n = len(points)
-    step_w = 100 / n
 
-    steps_html = ""
+    steps = ""
     for i, pt in enumerate(points):
         above = i % 2 == 0
-        steps_html += f"""
-        <div style="flex:1;display:flex;flex-direction:column;align-items:center;position:relative;">
-          {f'<div style="font-size:12px;color:{text};text-align:center;margin-bottom:10px;max-width:150px;">{pt[:60]}</div>' if above else '<div style="height:50px;"></div>'}
-          <div style="width:36px;height:36px;background:{accent};border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;color:#fff;z-index:2;flex-shrink:0;">{i+1}</div>
-          {f'<div style="height:50px;"></div>' if above else f'<div style="font-size:12px;color:{text};text-align:center;margin-top:10px;max-width:150px;">{pt[:60]}</div>'}
+        pt_html = f'<div style="font-size:10pt;color:{text};text-align:center;margin-bottom:6pt;max-width:100pt;">{pt[:60]}</div>'
+        steps += f"""
+        <div style="flex:1;display:flex;flex-direction:column;align-items:center;">
+          {pt_html if above else '<div style="height:36pt;"></div>'}
+          <div style="width:30pt;height:30pt;line-height:30pt;text-align:center;background:{accent};border-radius:50%;font-weight:700;font-size:12pt;color:#fff;flex-shrink:0;">{i+1}</div>
+          {('<div style="height:36pt;"></div>' if above else pt_html)}
         </div>"""
 
+    gm_html = f'<div class="gm-box">{gm}</div>' if gm else ""
+
     return f"""
-<div class="slide" style="background:{bg};padding:36px 50px;display:flex;flex-direction:column;">
-  <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;">
+<div style="background:{bg};padding:26pt 36pt;height:167mm;position:relative;overflow:hidden;display:flex;flex-direction:column;">
+  <div style="display:flex;align-items:center;gap:8pt;margin-bottom:7pt;">
     <div class="slide-num-badge">{num}</div>
-    <div style="font-size:22px;font-weight:800;color:{text};">{title}</div>
+    <div style="font-size:17pt;font-weight:800;color:{text};">{title}</div>
   </div>
-  {f'<div class="gm-box">{gm}</div>' if gm else ''}
-  <div style="flex:1;display:flex;align-items:center;position:relative;margin-top:20px;">
-    <!-- 가로 라인 -->
-    <div style="position:absolute;top:50%;left:0;right:0;height:4px;background:{accent};transform:translateY(-50%);z-index:1;"></div>
-    <div style="display:flex;width:100%;position:relative;z-index:2;">{steps_html}</div>
+  {gm_html}
+  <div style="flex:1;display:flex;align-items:center;position:relative;margin-top:14pt;">
+    <!-- 타임라인 가로선 -->
+    <div style="position:absolute;top:50%;left:0;right:0;height:3pt;background:{accent};"></div>
+    <div style="display:flex;width:100%;position:relative;">{steps}</div>
   </div>
   <div class="page-num">{num} / {total}</div>
 </div>
@@ -335,32 +346,33 @@ def _html_comparison(slide: dict, palette: dict, num: int, total: int) -> str:
     is_dark  = _is_dark(bg)
     text     = "#FFFFFF" if is_dark else "#1A1A1A"
     other_bg = "#222C3A" if is_dark else "#F0F2F5"
-    title    = slide.get("title","비교 분석")
-    gm       = slide.get("governing_message","")
-    body     = slide.get("body","")
+    title    = slide.get("title", "비교 분석")
+    gm       = slide.get("governing_message", "")
+    body     = slide.get("body", "")
     lines    = [l.strip() for l in body.split("\n") if l.strip()]
     mid      = len(lines) // 2
     left_l   = lines[:mid] if lines else ["기존 문제점들"]
     right_l  = lines[mid:] if lines else ["개선된 결과들"]
 
-    left_items  = "".join(f'<li style="margin-bottom:8px;font-size:13px;color:{text};list-style:none;">▸ {l}</li>' for l in left_l[:5])
-    right_items = "".join(f'<li style="margin-bottom:8px;font-size:13px;color:#fff;list-style:none;">✓ {l}</li>' for l in right_l[:5])
+    left_items  = "".join(f'<div style="margin-bottom:5pt;font-size:11pt;color:{text};">▸ {l}</div>' for l in left_l[:5])
+    right_items = "".join(f'<div style="margin-bottom:5pt;font-size:11pt;color:#fff;">✓ {l}</div>' for l in right_l[:5])
+    gm_html = f'<div class="gm-box">{gm}</div>' if gm else ""
 
     return f"""
-<div class="slide" style="background:{bg};padding:36px 50px;display:flex;flex-direction:column;">
-  <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;">
+<div style="background:{bg};padding:26pt 36pt;height:167mm;position:relative;overflow:hidden;display:flex;flex-direction:column;">
+  <div style="display:flex;align-items:center;gap:8pt;margin-bottom:7pt;">
     <div class="slide-num-badge">{num}</div>
-    <div style="font-size:22px;font-weight:800;color:{text};">{title}</div>
+    <div style="font-size:17pt;font-weight:800;color:{text};">{title}</div>
   </div>
-  {f'<div class="gm-box">{gm}</div>' if gm else ''}
-  <div style="display:flex;gap:16px;flex:1;margin-top:12px;">
-    <div style="flex:1;background:{other_bg};border-radius:10px;padding:20px 24px;">
-      <div style="font-size:16px;font-weight:700;color:{text};margin-bottom:14px;">기존 방식</div>
-      <ul>{left_items}</ul>
+  {gm_html}
+  <div style="display:flex;gap:12pt;flex:1;margin-top:8pt;">
+    <div style="flex:1;background:{other_bg};border-radius:7pt;padding:14pt 18pt;">
+      <div style="font-size:13pt;font-weight:700;color:{text};margin-bottom:10pt;">기존 방식</div>
+      {left_items}
     </div>
-    <div style="flex:1;background:{accent};border-radius:10px;padding:20px 24px;">
-      <div style="font-size:16px;font-weight:700;color:#fff;margin-bottom:14px;">UNIFLOW 적용 후 ✓</div>
-      <ul>{right_items}</ul>
+    <div style="flex:1;background:{accent};border-radius:7pt;padding:14pt 18pt;">
+      <div style="font-size:13pt;font-weight:700;color:#fff;margin-bottom:10pt;">UNIFLOW 적용 후 ✓</div>
+      {right_items}
     </div>
   </div>
   <div class="page-num">{num} / {total}</div>
@@ -374,46 +386,46 @@ def _html_infographic(slide: dict, palette: dict, num: int, total: int) -> str:
     is_dark  = _is_dark(bg)
     text     = "#FFFFFF" if is_dark else "#1A1A1A"
     other_bg = "#222C3A" if is_dark else "#F0F2F5"
-    title    = slide.get("title","주요 수치")
-    gm       = slide.get("governing_message","")
+    title    = slide.get("title", "주요 수치")
+    gm       = slide.get("governing_message", "")
     tp       = slide.get("talking_points") or []
-    body     = slide.get("body","")
+    body     = slide.get("body", "")
 
-    # 수치 추출
     numbers_info = []
     sources = tp[:4] if tp else [body]
     for src in sources[:4]:
         m = re.search(r"(\d+(?:\.\d+)?)\s*(%|배|배율|점|만|억|천만|%p)?", src)
         if m:
             val   = m.group(1) + (m.group(2) or "")
-            label = src.replace(m.group(0),"").strip("·: ") or src
+            label = src.replace(m.group(0), "").strip("·: ") or src
             numbers_info.append((val, label[:20]))
         else:
             numbers_info.append(("—", src[:25]))
     if not numbers_info:
-        numbers_info = [("15%","수익률 향상"),("70%","시간 절감"),("95%","고객 만족")]
+        numbers_info = [("15%", "수익률 향상"), ("70%", "시간 절감"), ("95%", "고객 만족")]
 
-    n = min(len(numbers_info), 4)
     cards = ""
     for i, (val, label) in enumerate(numbers_info[:4]):
         cbg = accent if i == 0 else other_bg
         ctc = "#fff" if i == 0 or is_dark else accent
         clc = "#fff" if i == 0 or is_dark else text
         cards += f"""
-        <div style="flex:1;background:{cbg};border-radius:10px;padding:24px 16px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;">
-          <div style="font-size:54px;font-weight:900;color:{ctc};line-height:1;">{val}</div>
-          <div style="height:2px;width:60%;background:{ctc};opacity:.5;"></div>
-          <div style="font-size:13px;color:{clc};text-align:center;">{label}</div>
+        <div style="flex:1;background:{cbg};border-radius:7pt;padding:18pt 12pt;text-align:center;margin:0 3pt;">
+          <div style="font-size:42pt;font-weight:900;color:{ctc};line-height:1;">{val}</div>
+          <div style="height:1.5pt;width:60%;background:{ctc};opacity:.5;margin:8pt auto;"></div>
+          <div style="font-size:11pt;color:{clc};">{label}</div>
         </div>"""
 
+    gm_html = f'<div class="gm-box">{gm}</div>' if gm else ""
+
     return f"""
-<div class="slide" style="background:{bg};padding:36px 50px;display:flex;flex-direction:column;">
-  <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;">
+<div style="background:{bg};padding:26pt 36pt;height:167mm;position:relative;overflow:hidden;display:flex;flex-direction:column;">
+  <div style="display:flex;align-items:center;gap:8pt;margin-bottom:7pt;">
     <div class="slide-num-badge">{num}</div>
-    <div style="font-size:22px;font-weight:800;color:{text};">{title}</div>
+    <div style="font-size:17pt;font-weight:800;color:{text};">{title}</div>
   </div>
-  {f'<div class="gm-box">{gm}</div>' if gm else ''}
-  <div style="display:flex;gap:16px;flex:1;margin-top:14px;">{cards}</div>
+  {gm_html}
+  <div style="display:flex;flex:1;margin-top:10pt;">{cards}</div>
   <div class="page-num">{num} / {total}</div>
 </div>
 """
@@ -425,35 +437,32 @@ def _html_closing(slide: dict, palette: dict, interview_data: dict, num: int, to
     is_dark  = _is_dark(bg)
     text     = "#FFFFFF" if is_dark else "#1A1A1A"
     sub      = "#AABBCC" if is_dark else "#666666"
-    def darken(h,a=40):
-        try:
-            h2=h.lstrip("#"); r,g,b=int(h2[0:2],16),int(h2[2:4],16),int(h2[4:6],16)
-            return f"#{max(0,r-a):02X}{max(0,g-a):02X}{max(0,b-a):02X}"
-        except: return h
+    dark_acc = _darken(accent, 40)
+
     closing_title = slide.get("title") or "감사합니다"
-    gm    = slide.get("governing_message") or slide.get("body","")
-    proposer = interview_data.get("proposerInfo","UNIFLOW")
-    today = date.today().strftime("%Y.%m")
+    gm       = slide.get("governing_message") or slide.get("body", "")
+    proposer = interview_data.get("proposerInfo", "UNIFLOW")
+    today    = date.today().strftime("%Y.%m")
 
     return f"""
-<div class="slide" style="background:{bg};display:flex;">
+<div style="background:{bg};display:flex;height:167mm;position:relative;overflow:hidden;">
   <!-- 좌측 컬러 패널 -->
-  <div style="width:380px;background:{accent};display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;position:relative;">
-    <div style="position:absolute;top:0;right:0;width:3px;height:100%;background:{darken(accent)};"></div>
-    <div style="font-size:34px;font-weight:900;color:#fff;text-align:center;padding:0 20px;">{closing_title}</div>
-    <div style="height:2px;width:120px;background:rgba(255,255,255,0.5);"></div>
-    <div style="font-size:13px;color:rgba(255,255,255,0.7);">{today}</div>
+  <div style="width:90mm;background:{accent};display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12pt;position:relative;">
+    <div style="position:absolute;top:0;right:0;width:2pt;height:100%;background:{dark_acc};"></div>
+    <div style="font-size:26pt;font-weight:900;color:#fff;text-align:center;padding:0 14pt;">{closing_title}</div>
+    <div style="height:2pt;width:80pt;background:rgba(255,255,255,.5);"></div>
+    <div style="font-size:11pt;color:rgba(255,255,255,.7);">{today}</div>
   </div>
   <!-- 우측 콘텐츠 -->
-  <div style="flex:1;padding:50px 50px 50px 50px;display:flex;flex-direction:column;gap:20px;">
+  <div style="flex:1;padding:38pt 38pt 38pt 38pt;display:flex;flex-direction:column;gap:14pt;">
     <div>
-      <div style="font-size:20px;font-weight:700;color:{text};margin-bottom:8px;">다음 단계</div>
-      <div style="height:3px;background:{accent};border-radius:2px;margin-bottom:12px;"></div>
-      <div style="font-size:14px;color:{text};line-height:1.7;">{gm or "다음 단계를 함께 논의해 보시겠습니까?"}</div>
+      <div style="font-size:16pt;font-weight:700;color:{text};margin-bottom:6pt;">다음 단계</div>
+      <div style="height:2pt;background:{accent};border-radius:2pt;margin-bottom:8pt;"></div>
+      <div style="font-size:12pt;color:{text};line-height:1.7;">{gm or "다음 단계를 함께 논의해 보시겠습니까?"}</div>
     </div>
     <div style="margin-top:auto;">
-      <div style="font-size:14px;font-weight:700;color:{accent};margin-bottom:6px;">📌 연락처</div>
-      <div style="font-size:14px;color:{text};line-height:1.7;">{proposer}</div>
+      <div style="font-size:12pt;font-weight:700;color:{accent};margin-bottom:4pt;">📌 연락처</div>
+      <div style="font-size:12pt;color:{text};line-height:1.7;">{proposer}</div>
     </div>
   </div>
   <div class="page-num">{num} / {total}</div>
@@ -463,7 +472,7 @@ def _html_closing(slide: dict, palette: dict, interview_data: dict, num: int, to
 
 # ─── 슬라이드 타입 디스패처 ─────────────────────────────────────────────────
 def _dispatch_slide_html(slide: dict, palette: dict, interview_data: dict, num: int, total: int) -> str:
-    t = str(slide.get("type","")).lower()
+    t = str(slide.get("type", "")).lower()
     if t == "cover":
         return _html_cover(slide, palette, interview_data, total)
     elif t == "executive_summary":
@@ -492,19 +501,16 @@ def _build_html(proposal: dict, interview_data: dict, palette: dict) -> str:
     for slide_data in slides:
         num = int(slide_data.get("slide_number", 0))
         try:
-            slides_html += f"""
-            <div class="slide-page">
-              {_dispatch_slide_html(slide_data, palette, interview_data, num, total)}
-            </div>"""
+            slides_html += f'<div class="slide-page">{_dispatch_slide_html(slide_data, palette, interview_data, num, total)}</div>'
         except Exception as e:
             logger.error(f"[PDF] 슬라이드 {num} HTML 생성 오류: {e}")
             slides_html += f"""
-            <div class="slide-page">
-              <div class="slide" style="background:{palette['bg']};padding:40px 50px;">
-                <div style="font-size:20px;font-weight:700;">{slide_data.get('title','슬라이드')}</div>
-                <div style="font-size:13px;margin-top:10px;">{slide_data.get('body','')}</div>
-              </div>
-            </div>"""
+<div class="slide-page">
+  <div style="background:{palette['bg']};padding:30pt 36pt;height:167mm;">
+    <div style="font-size:16pt;font-weight:700;">{slide_data.get('title','슬라이드')}</div>
+    <div style="font-size:11pt;margin-top:7pt;">{slide_data.get('body','')}</div>
+  </div>
+</div>"""
 
     return f"""<!DOCTYPE html>
 <html lang="ko">
@@ -512,13 +518,11 @@ def _build_html(proposal: dict, interview_data: dict, palette: dict) -> str:
 <meta charset="UTF-8">
 <style>
 {css}
-.slide-page {{
-  width:1280px; height:720px; page-break-after:always; overflow:hidden;
-  position:relative;
+@page {{
+  size: 297mm 167mm;
+  margin: 0;
 }}
-.slide-page:last-child {{ page-break-after:auto; }}
 </style>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
 <body>
 {slides_html}
@@ -526,80 +530,25 @@ def _build_html(proposal: dict, interview_data: dict, palette: dict) -> str:
 </html>"""
 
 
-# ─── Puppeteer(pyppeteer) PDF 변환 ──────────────────────────────────────────
-async def _html_to_pdf_async(html_content: str) -> bytes:
-    """pyppeteer로 HTML → PDF 변환 (비동기)
-
-    수정 내역:
-    - launch args: --single-process 방식으로 Railway 안정화
-    - setContent 사용 (파일 URL 불필요 → 경로 이슈 제거)
-    - page.pdf(): width/height 직접 지정 1280×720px (landscape 옵션 제거)
-    - asyncio.wait_for: 30초 타임아웃으로 무한 로딩 방지
-    """
-    try:
-        from pyppeteer import launch
-    except ImportError:
-        raise RuntimeError("pyppeteer가 설치되지 않았습니다. pip install pyppeteer")
-
-    async def _run() -> bytes:
-        browser = await launch({
-            "executablePath": os.environ.get(
-                "PUPPETEER_EXECUTABLE_PATH", "/usr/bin/chromium"),
-            "headless": True,
-            "args": [
-                "--no-sandbox",
-                "--disable-setuid-sandbox",
-                "--disable-dev-shm-usage",
-                "--disable-gpu",
-                "--no-first-run",
-                "--no-zygote",
-                "--single-process",       # Railway 컨테이너 안정화 핵심
-                "--disable-extensions",
-            ],
-        })
-        try:
-            page = await browser.newPage()
-            await page.setViewport({"width": 1280, "height": 720})
-            # setContent: 파일 URL 대신 HTML 직접 주입 (경로 이슈 없음)
-            await page.setContent(html_content, {
-                "waitUntil": "domcontentloaded",
-                "timeout": 30000,
-            })
-            # Chart.js 등 JS 렌더링 최소 대기
-            await asyncio.sleep(0.5)
-
-            # ──── PDF 출력: 1280×720 고정 (16:9), landscape 옵션 제거 ────
-            pdf_bytes = await page.pdf({
-                "width": "1280px",
-                "height": "720px",
-                "printBackground": True,
-                "margin": {
-                    "top": "0", "bottom": "0",
-                    "left": "0", "right": "0",
-                },
-            })
-            return pdf_bytes
-        finally:
-            await browser.close()
-
-    # 60초 타임아웃: 초과 시 즉시 TimeoutError → caller에서 failed 처리
-    try:
-        return await asyncio.wait_for(_run(), timeout=60)
-    except asyncio.TimeoutError:
-        logger.error("[PDF] 60초 타임아웃 — PDF 생성 실패")
-        raise RuntimeError("PDF 생성 타임아웃 (60초 초과)")
-
-
-
+# ─── WeasyPrint PDF 변환 ─────────────────────────────────────────────────
 def html_to_pdf(html_content: str) -> bytes:
     """
-    동기 래퍼: _html_to_pdf_async → 동기 결과 반환.
-
-    ⚠️ flow_deck.py에서 run_in_executor()로 별도 스레드에 실행됨.
-    스레드 내부에는 실행 중인 이벤트 루프가 없으므로 asyncio.run() 직접 사용.
-    (nest_asyncio 필요 없음. 이전 nest_asyncio 방식은 uvicorn 루프와 충돌 가능)
+    weasyprint로 HTML → PDF 변환 (동기, Chromium 불필요).
+    Railway 환경에서 안정적으로 동작.
     """
-    return asyncio.run(_html_to_pdf_async(html_content))
+    try:
+        from weasyprint import HTML, CSS
+        from weasyprint.text.fonts import FontConfiguration
+    except ImportError:
+        raise RuntimeError(
+            "weasyprint가 설치되지 않았습니다. pip install weasyprint"
+        )
+
+    font_config = FontConfiguration()
+    html_obj = HTML(string=html_content, base_url=None)
+    pdf_bytes = html_obj.write_pdf(font_config=font_config)
+    logger.info(f"[PDF] WeasyPrint 변환 완료: {len(pdf_bytes)} bytes")
+    return pdf_bytes
 
 
 # ─── 메인 함수 ─────────────────────────────────────────────────────────────
@@ -611,13 +560,13 @@ def generate_pdf(interview_data: dict, ai_summary: Optional[str] = None) -> byte
         style, bgColor, accentColor, font, proposalTitle, proposerInfo
     """
     # ── 팔레트 구성 ──────────────────────────────────────────────────────
-    style_key = str(interview_data.get("style","mckinsey")).lower()
+    style_key    = str(interview_data.get("style", "mckinsey")).lower()
     style_accent = STYLE_ACCENT.get(style_key, "#1E6FD9")
 
-    accent_raw = str(interview_data.get("accentColor","")).strip()
+    accent_raw = str(interview_data.get("accentColor", "")).strip()
     accent = accent_raw if re.match(r"^#[0-9A-Fa-f]{6}$", accent_raw) else style_accent
 
-    bg_raw = str(interview_data.get("bgColor","white")).strip()
+    bg_raw = str(interview_data.get("bgColor", "white")).strip()
     bg = BG_COLOR_MAP.get(bg_raw.lower(), "#FFFFFF")
     if bg_raw.startswith("#"):
         bg = bg_raw
@@ -635,14 +584,13 @@ def generate_pdf(interview_data: dict, ai_summary: Optional[str] = None) -> byte
             pass
 
     if not (proposal and isinstance(proposal.get("slides"), list) and proposal["slides"]):
-        # 레거시 폴백 (최소 구조)
         logger.warning("[PDF] proposalJson 없음, 기본 슬라이드 생성")
         proposal = {
-            "title": interview_data.get("proposalTitle","제안서"),
+            "title": interview_data.get("proposalTitle", "제안서"),
             "slides": [
-                {"slide_number":1,"type":"cover","title":interview_data.get("proposalTitle","제안서")},
-                {"slide_number":2,"type":"content","title":"핵심 내용","body":interview_data.get("coreContent","")},
-                {"slide_number":3,"type":"closing","title":"감사합니다","body":""},
+                {"slide_number": 1, "type": "cover",   "title": interview_data.get("proposalTitle", "제안서")},
+                {"slide_number": 2, "type": "content",  "title": "핵심 내용", "body": interview_data.get("coreContent", "")},
+                {"slide_number": 3, "type": "closing",  "title": "감사합니다", "body": ""},
             ]
         }
 
