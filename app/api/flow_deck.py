@@ -1,18 +1,17 @@
 """
-FLOW Deck API 라우터 v3
-- POST /api/flow-deck/generate  : 인터뷰 데이터 → PDF 생성 → Supabase Storage 업로드 → URL 반환
-- GET  /api/flow-deck/status/{session_id} : 세션 처리 상태 조회
+FLOW Deck API 라우터 v4
+- POST /api/flow-deck/generate       : 기존 호환용 (즉시 200 반환)
+- POST /api/flow-deck/download       : PPTX 바이트 직접 반환 (Supabase 불필요)
+- GET  /api/flow-deck/status/{id}   : 세션 상태 조회
 
-수정 사항 (v3):
-- async 컨텍스트에서 동기 generate_pdf()를 run_in_executor()로 안전 실행
-  (이전: nest_asyncio 충돌로 Railway 500 에러 발생)
-- Storage upsert 옵션: 문자열 "true" → bool True
-- pptx_url 컬럼 유지 (FlowDeckSession.tsx 하위 호환)
+v4 핵심 변경:
+- /download 엔드포인트 추가: DB 폴링 없이 PPTX 즉시 반환
+- Supabase 연결 실패와 무관하게 파일 생성·다운로드 가능
 """
 import logging
 import asyncio
 from functools import partial
-from fastapi import APIRouter, HTTPException, BackgroundTasks
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Response
 from pydantic import BaseModel
 from typing import Optional
 
@@ -139,6 +138,36 @@ async def generate_flow_deck(
         "session_id": req.session_id,
         "status": "processing",
     }
+
+
+# ─── 엔드포인트: PPTX 직접 다운로드 (Supabase 불필요) ────────────────────────
+class DownloadRequest(BaseModel):
+    interview_data: dict
+    ai_summary: Optional[str] = None
+    title: Optional[str] = "proposal"
+
+@router.post("/download")
+async def download_pptx(req: DownloadRequest):
+    """
+    PPTX를 생성하여 바이트로 직접 반환합니다.
+    DB 폴링 없음. Supabase 연결 불필요. 실패 시 즉시 500 에러.
+    """
+    try:
+        from app.services.pptx_generator import generate_pptx
+        loop = asyncio.get_event_loop()
+        file_bytes = await loop.run_in_executor(
+            None,
+            partial(generate_pptx, req.interview_data, req.ai_summary)
+        )
+        safe_title = "".join(c if c.isalnum() or c in "-_" else "_" for c in (req.title or "proposal"))[:40]
+        return Response(
+            content=file_bytes,
+            media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            headers={"Content-Disposition": f'attachment; filename="{safe_title}.pptx"'},
+        )
+    except Exception as e:
+        logger.error(f"[FlowDeck/download] PPTX 생성 실패: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"PPTX 생성 실패: {e}")
 
 
 # ─── 엔드포인트: 상태 조회 ────────────────────────────────────────────────────
